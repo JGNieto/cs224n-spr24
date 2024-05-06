@@ -165,6 +165,8 @@ class BertModel(BertPreTrainedModel):
     # Get word embedding from self.word_embedding into input_embeds.
     inputs_embeds = None
     ### TODO
+    inputs_embeds = self.word_embedding(input_ids)
+    ### END CODE
     raise NotImplementedError
 
 
@@ -172,6 +174,8 @@ class BertModel(BertPreTrainedModel):
     pos_ids = self.position_ids[:, :seq_length]
     pos_embeds = None
     ### TODO
+    pos_embeds = self.pos_embedding(pos_ids)
+    ### END CODE
     raise NotImplementedError
 
 
@@ -182,6 +186,11 @@ class BertModel(BertPreTrainedModel):
 
     # Add three embeddings together; then apply embed_layer_norm and dropout and return.
     ### TODO
+    embeddings = input_embeds + pos_embeds + tk_type_embeds
+    layer_norm = self.embed_layer_norm(embeddings)
+    out = self.embed_dropout(layer_norm)
+    return out
+    ### END CODE
     raise NotImplementedError
 
 

@@ -59,8 +59,31 @@ class AdamW(Optimizer):
                 # 4. Apply weight decay after the main gradient-based updates.
                 # Refer to the default project handout for more details.
 
-                ### TODO
-                raise NotImplementedError
+                beta1 = group["betas"][0]
+                beta2 = group["betas"][1]
+                eps = group['eps']
+                weight_decay = group['weight_decay']
 
+                if len(state) == 0:
+                    #Initialize 1st moment vector
+                    state['m_t'] = torch.zeros(grad.size(), dtype=torch.float32)
+                    #Initialize 2nd moment vector
+                    state['v_t'] = torch.zeros(grad.size(), dtype=torch.float32)
+                    #Initialize timestep
+                    state['t'] = 0 
+
+                #t ← t + 1
+                state['t'] = state['t'] + 1
+                #Get gradients w.r.t. stochastic objective at timestep t
+                grad_t = grad + weight_decay * p.data
+                #Update biased first moment estimate
+                state["m_t"] = beta1*state["m_t"] + (1-beta1)*grad_t
+                #Update biased second raw moment estimate
+                state['v_t'] = beta2 * state['v_t'] + (1 - beta2) * grad_t**2
+                #Apply bias correction using the "efficient version"
+                alpha_t = alpha * math.sqrt(1.0 - beta2**state['t']) / (1.0 - beta1**state['t'])
+                #Update parameters and apply weight decay after the main gradient-based updates.
+                p.data = p.data - (alpha_t * state['m_t']) / (torch.sqrt(state['v_t']) + eps) 
+                p.data = p.data - alpha_t * weight_decay * p.data    
 
         return loss
