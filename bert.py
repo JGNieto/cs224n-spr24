@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from base_bert import BertPreTrainedModel
 from utils import *
+import math
 
 
 class BertSelfAttention(nn.Module):
@@ -50,7 +51,14 @@ class BertSelfAttention(nn.Module):
     #   [bs, seq_len, num_attention_heads * attention_head_size = hidden_size].
 
     ### TODO
-    raise NotImplementedError
+    numerator = query @ torch.transpose(key, 3, 4)
+    masked_numerator = numerator + attention_mask
+    fraction = masked_numerator / math.sqrt(self.attention_head_size)
+    softmax = torch.nn.functional.softmax(fraction)
+    result = softmax @ value
+    reshaped = torch.permute(result, (0, 2, 1, 3))
+    concatenated = reshaped.view((key.shape[0], -1, self.num_attention_heads * self.attention_head_size))
+    return concatenated
 
 
   def forward(self, hidden_states, attention_mask):
@@ -99,6 +107,7 @@ class BertLayer(nn.Module):
     # Hint: Remember that BERT applies dropout to the transformed output of each sub-layer,
     # before it is added to the sub-layer input and normalized with a layer norm.
     ### TODO
+
     raise NotImplementedError
 
 
