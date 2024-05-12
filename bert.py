@@ -51,13 +51,13 @@ class BertSelfAttention(nn.Module):
     #   [bs, seq_len, num_attention_heads * attention_head_size = hidden_size].
 
     ### TODO
-    numerator = query @ torch.transpose(key, 3, 4)
+    numerator = query @ torch.transpose(key, 2, 3)
     masked_numerator = numerator + attention_mask
     fraction = masked_numerator / math.sqrt(self.attention_head_size)
-    softmax = torch.nn.functional.softmax(fraction)
+    softmax = torch.nn.functional.softmax(fraction, dim=-1)
     result = softmax @ value
     reshaped = torch.permute(result, (0, 2, 1, 3))
-    concatenated = reshaped.view((key.shape[0], -1, self.num_attention_heads * self.attention_head_size))
+    concatenated = reshaped.reshape((key.shape[0], -1, self.num_attention_heads * self.attention_head_size))
     return concatenated
 
 
@@ -107,8 +107,10 @@ class BertLayer(nn.Module):
     # Hint: Remember that BERT applies dropout to the transformed output of each sub-layer,
     # before it is added to the sub-layer input and normalized with a layer norm.
     ### TODO
-
-    raise NotImplementedError
+    after_linear = dense_layer(output)
+    after_dropout = dropout(after_linear)
+    normalized = ln_layer(input + after_dropout)
+    return normalized
 
 
   def forward(self, hidden_states, attention_mask):
@@ -121,8 +123,33 @@ class BertLayer(nn.Module):
     3. A feed forward layer.
     4. An add-norm operation that takes the input and output of the feed forward layer.
     """
-    ### TODO
-    raise NotImplementedError
+    # By Javier
+
+    # Apply multi-head attention.
+    attn_output = self.self_attention(hidden_states, attention_mask)
+
+    # Apply add-norm to multi-head attention.
+    normalized_attn_output = self.add_norm(
+            hidden_states,
+            attn_output,
+            self.attention_dense,
+            self.attention_dropout,
+            self.attention_layer_norm,
+            )
+
+    # Apply feed-forward
+    ffn_intermediate = self.interm_af(self.interm_dense(normalized_attn_output))
+
+    # Apply add-norm to feed-forward.
+    ffn_output = self.add_norm(
+            normalized_attn_output,
+            ffn_intermediate,
+            self.out_dense,
+            self.out_dropout,
+            self.out_layer_norm,
+            )
+
+    return ffn_output
 
 
 
@@ -167,7 +194,6 @@ class BertModel(BertPreTrainedModel):
     ### TODO
     inputs_embeds = self.word_embedding(input_ids)
     ### END CODE
-    raise NotImplementedError
 
 
     # Use pos_ids to get position embedding from self.pos_embedding into pos_embeds.
@@ -176,7 +202,6 @@ class BertModel(BertPreTrainedModel):
     ### TODO
     pos_embeds = self.pos_embedding(pos_ids)
     ### END CODE
-    raise NotImplementedError
 
 
     # Get token type ids. Since we are not considering token type, this embedding is
@@ -186,12 +211,11 @@ class BertModel(BertPreTrainedModel):
 
     # Add three embeddings together; then apply embed_layer_norm and dropout and return.
     ### TODO
-    embeddings = input_embeds + pos_embeds + tk_type_embeds
+    embeddings = inputs_embeds + pos_embeds + tk_type_embeds
     layer_norm = self.embed_layer_norm(embeddings)
     out = self.embed_dropout(layer_norm)
     return out
     ### END CODE
-    raise NotImplementedError
 
 
   def encode(self, hidden_states, attention_mask):
