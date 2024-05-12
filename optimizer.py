@@ -66,9 +66,9 @@ class AdamW(Optimizer):
 
                 if len(state) == 0:
                     #Initialize 1st moment vector
-                    state['m_t'] = torch.zeros(grad.size(), dtype=torch.float32)
+                    state['m_t'] = torch.zeros(grad.size(), dtype=torch.float32, device=p.device)
                     #Initialize 2nd moment vector
-                    state['v_t'] = torch.zeros(grad.size(), dtype=torch.float32)
+                    state['v_t'] = torch.zeros(grad.size(), dtype=torch.float32, device=p.device)
                     #Initialize timestep
                     state['t'] = 0 
 
