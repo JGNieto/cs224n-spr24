@@ -12,7 +12,6 @@ from bert import BertModel
 from optimizer import AdamW
 from tqdm import tqdm
 from dora import replace_linear_with_dora
-from PCGrad_tf import PCGrad
 
 TQDM_DISABLE=False
 
@@ -49,6 +48,7 @@ class BertSentimentClassifier(torch.nn.Module):
                 param.requires_grad = True
 
         # Create any instance variables you need to classify the sentiment of BERT embeddings.
+        self.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
         self.last_layer = torch.nn.Linear(config.hidden_size, self.num_labels)
 
     def forward(self, input_ids, attention_mask):
@@ -59,8 +59,10 @@ class BertSentimentClassifier(torch.nn.Module):
         ### TODO
         outputs = self.bert(input_ids, attention_mask)
 
+        dropped = self.dropout(outputs["pooler_output"])
+
         # Returns logits
-        logits = self.last_layer(outputs["pooler_output"])
+        logits = self.last_layer(dropped)
         return logits
 
 
@@ -266,8 +268,6 @@ def train(args):
 
     lr = args.lr
 
-    # UNCOMMENT this line to use PCGrad
-    # optimizer = PCGrad(tf.train.AdamW(model.parameters(), lr=lr))
     optimizer = AdamW(model.parameters(), lr=lr)
 
     best_dev_acc = 0

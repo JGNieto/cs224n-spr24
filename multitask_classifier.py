@@ -34,6 +34,7 @@ from datasets import (
 
 from evaluation import model_eval_sst, model_eval_multitask, model_eval_test_multitask
 
+from PCGrad_tf import PCGrad
 
 TQDM_DISABLE=False
 
@@ -77,9 +78,14 @@ class MultitaskBERT(nn.Module):
                 param.requires_grad = True
         # You will want to add layers here to perform the downstream tasks.
 
-        self.sentiment_linear = torch.nn.Linear(config.hidden_size, N_SENTIMENT_CLASSES)
-        self.paraphrase_linear = torch.nn.Linear(2 * config.hidden_size, N_PARAPHRASE_CLASSES)
-        self.similarity_linear = torch.nn.Linear(2 * config.hidden_size, N_STS_CLASSES)
+        self.sentiment_linear = nn.Linear(config.hidden_size, N_SENTIMENT_CLASSES)
+        self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
+
+        self.paraphrase_linear = nn.Linear(2 * config.hidden_size, N_PARAPHRASE_CLASSES)
+        self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob)
+
+        self.similarity_linear = nn.Linear(2 * config.hidden_size, N_STS_CLASSES)
+        self.similarity_dropout = nn.Dropout(config.hidden_dropout_prob)
 
 
     def forward(self, input_ids, attention_mask):
@@ -101,7 +107,8 @@ class MultitaskBERT(nn.Module):
         '''
 
         embeddings = self.forward(input_ids, attention_mask)
-        logits = self.sentiment_linear(embeddings)
+        dropped = self.sentiment_dropout(embeddings)
+        logits = self.sentiment_linear(dropped)
         return  logits
 
     def predict_paraphrase(self,
@@ -116,8 +123,9 @@ class MultitaskBERT(nn.Module):
         embeddings_2 = self.forward(input_ids_2, attention_mask_2)
 
         combined_embeddings = torch.concat(embeddings_1, embeddings_2)
+        dropped = self.paraphrase_dropout(combined_embeddings)
 
-        logits = self.paraphrase_linear(combined_embeddings)
+        logits = self.paraphrase_linear(dropped)
 
         return  logits
 
@@ -133,12 +141,11 @@ class MultitaskBERT(nn.Module):
         embeddings_2 = self.forward(input_ids_2, attention_mask_2)
 
         combined_embeddings = torch.concat(embeddings_1, embeddings_2)
+        dropped = self.similarity_dropout(combined_embeddings)
 
-        logits = self.similarity_linear(combined_embeddings)
+        logits = self.similarity_linear(dropped)
 
         return  logits
-
-
 
 
 def save_model(model, optimizer, args, config, filepath):
@@ -216,6 +223,9 @@ def train_multitask(args):
     lr = args.lr
     optimizer = AdamW(model.parameters(), lr=lr)
     best_dev_acc = 0
+
+    # UNCOMMENT this line to use PCGrad
+    # optimizer = PCGrad(tf.train.AdamW(model.parameters(), lr=lr))
 
     # Run for the specified number of epochs.
     for epoch in range(args.epochs):
