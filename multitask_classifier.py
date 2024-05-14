@@ -55,6 +55,7 @@ N_SENTIMENT_CLASSES = 5     # 0 (negative) to 5 (positive)
 N_STS_CLASSES = 6           # 0 (not at all related), to 5
 N_PARAPHRASE_CLASSES = 2    # Binary classification
 
+DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
 class MultitaskBERT(nn.Module):
     '''
@@ -154,6 +155,31 @@ def save_model(model, optimizer, args, config, filepath):
     torch.save(save_info, filepath)
     print(f"save the model to {filepath}")
 
+# Custom function
+def sentiment_batch(model: nn.Module, optimizer: torch.optim.Optimizer, batch):
+    b_ids, b_mask, b_labels = (batch['token_ids'],
+                               batch['attention_mask'], batch['labels'])
+
+    b_ids = b_ids.to(DEVICE)
+    b_mask = b_mask.to(DEVICE)
+    b_labels = b_labels.to(DEVICE)
+
+    optimizer.zero_grad()
+    logits = model.predict_sentiment(b_ids, b_mask)
+    loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
+
+    loss.backward()
+    optimizer.step()
+
+    return loss.item()
+
+# Custom function
+def paraphrase_batch(batch):
+    pass
+
+# Custom function
+def semantic_batch(batch):
+    pass
 
 def train_multitask(args):
     '''Train MultitaskBERT.
@@ -163,7 +189,6 @@ def train_multitask(args):
     look at test_multitask below to see how you can use the custom torch `Dataset`s
     in datasets.py to load in examples from the Quora and SemEval datasets.
     '''
-    device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
     # Create the data and its corresponding datasets and dataloader.
     sst_train_data, num_labels,para_train_data, sts_train_data = load_multitask_data(args.sst_train,args.para_train,args.sts_train, split ='train')
     sst_dev_data, num_labels,para_dev_data, sts_dev_data = load_multitask_data(args.sst_dev,args.para_dev,args.sts_dev, split ='train')
@@ -186,7 +211,7 @@ def train_multitask(args):
     config = SimpleNamespace(**config)
 
     model = MultitaskBERT(config)
-    model = model.to(device)
+    model = model.to(DEVICE)
 
     lr = args.lr
     optimizer = AdamW(model.parameters(), lr=lr)
@@ -197,28 +222,15 @@ def train_multitask(args):
         model.train()
         train_loss = 0
         num_batches = 0
+
         for batch in tqdm(sst_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
-            b_ids, b_mask, b_labels = (batch['token_ids'],
-                                       batch['attention_mask'], batch['labels'])
-
-            b_ids = b_ids.to(device)
-            b_mask = b_mask.to(device)
-            b_labels = b_labels.to(device)
-
-            optimizer.zero_grad()
-            logits = model.predict_sentiment(b_ids, b_mask)
-            loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
-
-            loss.backward()
-            optimizer.step()
-
-            train_loss += loss.item()
+            train_loss = sentiment_batch(model, optimizer, batch)
             num_batches += 1
 
-        train_loss = train_loss / (num_batches)
+        train_loss = train_loss / num_batches
 
-        train_acc, train_f1, *_ = model_eval_sst(sst_train_dataloader, model, device)
-        dev_acc, dev_f1, *_ = model_eval_sst(sst_dev_dataloader, model, device)
+        train_acc, train_f1, *_ = model_eval_sst(sst_train_dataloader, model, DEVICE)
+        dev_acc, dev_f1, *_ = model_eval_sst(sst_dev_dataloader, model, DEVICE)
 
         if dev_acc > best_dev_acc:
             best_dev_acc = dev_acc
@@ -230,13 +242,12 @@ def train_multitask(args):
 def test_multitask(args):
     '''Test and save predictions on the dev and test sets of all three tasks.'''
     with torch.no_grad():
-        device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
         saved = torch.load(args.filepath)
         config = saved['model_config']
 
         model = MultitaskBERT(config)
         model.load_state_dict(saved['model'])
-        model = model.to(device)
+        model = model.to(DEVICE)
         print(f"Loaded model to test from {args.filepath}")
 
         sst_test_data, num_labels,para_test_data, sts_test_data = \
@@ -273,13 +284,13 @@ def test_multitask(args):
             dev_paraphrase_accuracy, dev_para_y_pred, dev_para_sent_ids, \
             dev_sts_corr, dev_sts_y_pred, dev_sts_sent_ids = model_eval_multitask(sst_dev_dataloader,
                                                                     para_dev_dataloader,
-                                                                    sts_dev_dataloader, model, device)
+                                                                    sts_dev_dataloader, model, DEVICE)
 
         test_sst_y_pred, \
             test_sst_sent_ids, test_para_y_pred, test_para_sent_ids, test_sts_y_pred, test_sts_sent_ids = \
                 model_eval_test_multitask(sst_test_dataloader,
                                           para_test_dataloader,
-                                          sts_test_dataloader, model, device)
+                                          sts_test_dataloader, model, DEVICE)
 
         with open(args.sst_dev_out, "w+") as f:
             print(f"dev sentiment acc :: {dev_sentiment_accuracy :.3f}")
@@ -334,7 +345,6 @@ def get_args():
     parser.add_argument("--fine-tune-mode", type=str,
                         help='last-linear-layer: the BERT parameters are frozen and the task specific head parameters are updated; full-model: BERT parameters are updated as well',
                         choices=('last-linear-layer', 'full-model'), default="last-linear-layer")
-    parser.add_argument("--use_gpu", action='store_true')
 
     parser.add_argument("--sst_dev_out", type=str, default="predictions/sst-dev-output.csv")
     parser.add_argument("--sst_test_out", type=str, default="predictions/sst-test-output.csv")
