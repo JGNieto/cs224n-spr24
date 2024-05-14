@@ -57,7 +57,7 @@ class BertSelfAttention(nn.Module):
     softmax = torch.nn.functional.softmax(fraction, dim=-1)
     result = softmax @ value
     reshaped = torch.permute(result, (0, 2, 1, 3))
-    concatenated = reshaped.reshape((key.shape[0], -1, self.num_attention_heads * self.attention_head_size))
+    concatenated = reshaped.reshape((key.shape[0], -1, self.hidden_size))
     return concatenated
 
 

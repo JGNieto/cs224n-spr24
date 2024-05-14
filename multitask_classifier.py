@@ -50,7 +50,10 @@ def seed_everything(seed=11711):
 
 
 BERT_HIDDEN_SIZE = 768
-N_SENTIMENT_CLASSES = 5
+
+N_SENTIMENT_CLASSES = 5     # 0 (negative) to 5 (positive)
+N_STS_CLASSES = 6           # 0 (not at all related), to 5
+N_PARAPHRASE_CLASSES = 2    # Binary classification
 
 
 class MultitaskBERT(nn.Module):
@@ -72,8 +75,10 @@ class MultitaskBERT(nn.Module):
             elif config.fine_tune_mode == 'full-model':
                 param.requires_grad = True
         # You will want to add layers here to perform the downstream tasks.
-        ### TODO
-        raise NotImplementedError
+
+        self.sentiment_linear = torch.nn.Linear(config.hidden_size, N_SENTIMENT_CLASSES)
+        self.paraphrase_linear = torch.nn.Linear(2 * config.hidden_size, N_PARAPHRASE_CLASSES)
+        self.similarity_linear = torch.nn.Linear(2 * config.hidden_size, N_STS_CLASSES)
 
 
     def forward(self, input_ids, attention_mask):
@@ -82,8 +87,9 @@ class MultitaskBERT(nn.Module):
         # Here, you can start by just returning the embeddings straight from BERT.
         # When thinking of improvements, you can later try modifying this
         # (e.g., by adding other layers).
-        ### TODO
-        raise NotImplementedError
+
+        bert_outputs = self.bert(input_ids, attention_mask)
+        return bert_outputs["pooler_output"]
 
 
     def predict_sentiment(self, input_ids, attention_mask):
@@ -92,9 +98,10 @@ class MultitaskBERT(nn.Module):
         (0 - negative, 1- somewhat negative, 2- neutral, 3- somewhat positive, 4- positive)
         Thus, your output should contain 5 logits for each sentence.
         '''
-        ### TODO
-        raise NotImplementedError
 
+        embeddings = self.forward(input_ids, attention_mask)
+        logits = self.sentiment_linear(embeddings)
+        return  logits
 
     def predict_paraphrase(self,
                            input_ids_1, attention_mask_1,
@@ -103,8 +110,15 @@ class MultitaskBERT(nn.Module):
         Note that your output should be unnormalized (a logit); it will be passed to the sigmoid function
         during evaluation.
         '''
-        ### TODO
-        raise NotImplementedError
+
+        embeddings_1 = self.forward(input_ids_1, attention_mask_1)
+        embeddings_2 = self.forward(input_ids_2, attention_mask_2)
+
+        combined_embeddings = torch.concat(embeddings_1, embeddings_2)
+
+        logits = self.paraphrase_linear(combined_embeddings)
+
+        return  logits
 
 
     def predict_similarity(self,
@@ -113,8 +127,15 @@ class MultitaskBERT(nn.Module):
         '''Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
         Note that your output should be unnormalized (a logit).
         '''
-        ### TODO
-        raise NotImplementedError
+
+        embeddings_1 = self.forward(input_ids_1, attention_mask_1)
+        embeddings_2 = self.forward(input_ids_2, attention_mask_2)
+
+        combined_embeddings = torch.concat(embeddings_1, embeddings_2)
+
+        logits = self.similarity_linear(combined_embeddings)
+
+        return  logits
 
 
 
@@ -158,7 +179,7 @@ def train_multitask(args):
     # Init model.
     config = {'hidden_dropout_prob': args.hidden_dropout_prob,
               'num_labels': num_labels,
-              'hidden_size': 768,
+              'hidden_size': BERT_HIDDEN_SIZE,
               'data_dir': '.',
               'fine_tune_mode': args.fine_tune_mode}
 
