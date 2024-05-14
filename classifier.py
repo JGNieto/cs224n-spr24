@@ -11,7 +11,8 @@ from tokenizer import BertTokenizer
 from bert import BertModel
 from optimizer import AdamW
 from tqdm import tqdm
-
+from dora import replace_linear_with_dora
+from PCGrad_tf import PCGrad
 
 TQDM_DISABLE=False
 
@@ -260,8 +261,15 @@ def train(args):
     model = BertSentimentClassifier(config)
     model = model.to(device)
 
+    # UNCOMMENT this line to use DoRA
+    # replace_linear_with_dora(model)
+
     lr = args.lr
+
+    # UNCOMMENT this line to use PCGrad
+    # optimizer = PCGrad(tf.train.AdamW(model.parameters(), lr=lr))
     optimizer = AdamW(model.parameters(), lr=lr)
+
     best_dev_acc = 0
 
     # Run for the specified number of epochs.
