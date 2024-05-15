@@ -56,7 +56,7 @@ class BertSelfAttention(nn.Module):
     dropped = self.dropout(softmax)
     result = dropped @ value
     reshaped = torch.permute(result, (0, 2, 1, 3))
-    concatenated = reshaped.reshape((key.shape[0], -1, self.hidden_size))
+    concatenated = reshaped.reshape((key.shape[0], -1, self.all_head_size))
     return concatenated
 
 
