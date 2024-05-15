@@ -35,6 +35,7 @@ from datasets import (
 from evaluation import model_eval_sst, model_eval_multitask, model_eval_test_multitask
 
 from PCGrad_tf import PCGrad
+from dora import replace_linear_with_dora
 
 TQDM_DISABLE=False
 
@@ -219,6 +220,9 @@ def train_multitask(args):
 
     model = MultitaskBERT(config)
     model = model.to(DEVICE)
+
+    # UNCOMMENT this line to use DoRA
+    # replace_linear_with_dora(model)
 
     lr = args.lr
     optimizer = AdamW(model.parameters(), lr=lr)
