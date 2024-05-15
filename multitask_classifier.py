@@ -34,7 +34,7 @@ from datasets import (
 
 from evaluation import model_eval_sst, model_eval_multitask, model_eval_test_multitask
 
-from PCGrad_tf import PCGrad
+from pcgrad import PCGrad
 from dora import replace_linear_with_dora
 
 TQDM_DISABLE=False
