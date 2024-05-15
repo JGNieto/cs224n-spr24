@@ -49,13 +49,12 @@ class BertSelfAttention(nn.Module):
     # - Multiply the attention scores with the value to get back weighted values.
     # - Before returning, concatenate multi-heads to recover the original shape:
     #   [bs, seq_len, num_attention_heads * attention_head_size = hidden_size].
-
-    ### TODO
     numerator = query @ torch.transpose(key, 2, 3)
     masked_numerator = numerator + attention_mask
     fraction = masked_numerator / math.sqrt(self.attention_head_size)
     softmax = torch.nn.functional.softmax(fraction, dim=-1)
-    result = softmax @ value
+    dropped = self.dropout(softmax)
+    result = dropped @ value
     reshaped = torch.permute(result, (0, 2, 1, 3))
     concatenated = reshaped.reshape((key.shape[0], -1, self.hidden_size))
     return concatenated
