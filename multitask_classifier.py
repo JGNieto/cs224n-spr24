@@ -16,7 +16,7 @@ import random, numpy as np, argparse
 from types import SimpleNamespace
 
 import torch
-from torch import nn
+from torch import nn, optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, RandomSampler
 
@@ -168,7 +168,7 @@ def save_model(model, optimizer, args, config, filepath):
     print(f"save the model to {filepath}")
 
 # Custom function
-def sentiment_batch(model: MultitaskBERT, batch):
+def sentiment_batch(model: MultitaskBERT, batch) -> torch.Tensor:
     b_ids, b_mask, b_labels = (batch['token_ids'],
                                batch['attention_mask'], batch['labels'])
 
@@ -182,7 +182,7 @@ def sentiment_batch(model: MultitaskBERT, batch):
     return loss
 
 # Custom function
-def paraphrase_batch(model: MultitaskBERT, batch):
+def paraphrase_batch(model: MultitaskBERT, batch) -> torch.Tensor:
     b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'],
                                                       batch['attention_mask_1'],
                                                       batch['token_ids_2'],
@@ -202,7 +202,7 @@ def paraphrase_batch(model: MultitaskBERT, batch):
     return loss
 
 # Custom function
-def semantic_batch(model: MultitaskBERT, batch):
+def semantic_batch(model: MultitaskBERT, batch) -> torch.Tensor:
     b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'],
                                                       batch['attention_mask_1'],
                                                       batch['token_ids_2'],
@@ -273,7 +273,7 @@ def train_multitask(args):
     # replace_linear_with_dora(model)
 
     lr = args.lr
-    optimizer = AdamW(model.parameters(), lr=lr)
+    optimizer: AdamW | PCGrad = AdamW(model.parameters(), lr=lr)
     best_dev_acc = 0
 
     num_samples = min(len(sst_train_data), len(para_train_data), len(sts_train_data))
@@ -281,11 +281,16 @@ def train_multitask(args):
     print("Number of samples:", num_samples)
     print("Start training at time:", datetime.now())
 
-    # UNCOMMENT this line to use PCGrad
-    # optimizer = PCGrad(tf.train.AdamW(model.parameters(), lr=lr))
+    if args.pcgrad:
+        print("Using PCGrad!")
+        optimizer = PCGrad(optimizer)
+
+    print()
 
     # Run for the specified number of epochs.
     for epoch in range(args.epochs):
+        print()
+
         model.train()
         train_loss = 0
         num_batches = 0
@@ -295,10 +300,16 @@ def train_multitask(args):
             paraphrase_loss = paraphrase_batch(model, para_batch)
             semantic_loss = semantic_batch(model, sts_batch)
 
-            loss = sentiment_loss + paraphrase_loss + semantic_loss
+            losses = [sentiment_loss, paraphrase_loss, semantic_loss]
+            loss: torch.Tensor = sum(losses) # type: ignore
 
             optimizer.zero_grad()
-            loss.backward()
+
+            if args.pcgrad:
+                loss.backward()
+            else:
+                optimizer.pc_backward(losses) # type: ignore
+
             optimizer.step()
 
             train_loss += loss.item()
@@ -311,11 +322,15 @@ def train_multitask(args):
 
         dev_acc = sst_dev_acc + para_dev_acc + sts_dev_corr
 
+        print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, dev acc :: {dev_acc :.3f}")
+
         if dev_acc > best_dev_acc:
+            print(f"New best dev acc :: {dev_acc :.3f} (prev: {best_dev_acc :.3f})")
             best_dev_acc = dev_acc
             save_model(model, optimizer, args, config, args.filepath)
+        else:
+            print(f"Discard model (best dev acc :: {best_dev_acc :.3f})")
 
-        print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, dev acc :: {dev_acc :.3f}")
 
     print("Finish training at time:", datetime.now())
 
@@ -439,6 +454,7 @@ def get_args():
     parser.add_argument("--batch_size", help='sst: 64, cfimdb: 8 can fit a 12GB GPU', type=int, default=8)
     parser.add_argument("--hidden_dropout_prob", type=float, default=0.3)
     parser.add_argument("--lr", type=float, help="learning rate", default=1e-5)
+    parser.add_argument("--pcgrad", action='store_true', help='Use PCGrad')
 
     args = parser.parse_args()
     return args
