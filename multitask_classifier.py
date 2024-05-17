@@ -55,10 +55,6 @@ def seed_everything(seed=11711):
 
 BERT_HIDDEN_SIZE = 768
 
-N_SENTIMENT_CLASSES = 5     # 0 (negative) to 5 (positive)
-N_STS_CLASSES = 6           # 0 (not at all related), to 5
-N_PARAPHRASE_CLASSES = 2    # Binary classification
-
 SENTIMENT_BATCH_SIZE = 8
 STS_BATCH_SIZE = 8
 PARAPHRASE_BATCH_SIZE = 8
@@ -85,13 +81,13 @@ class MultitaskBERT(nn.Module):
                 param.requires_grad = True
         # You will want to add layers here to perform the downstream tasks.
 
-        self.sentiment_linear = nn.Linear(config.hidden_size, N_SENTIMENT_CLASSES)
+        self.sentiment_linear = nn.Linear(config.hidden_size, 5)
         self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
 
-        self.paraphrase_linear = nn.Linear(2 * config.hidden_size, N_PARAPHRASE_CLASSES)
+        self.paraphrase_linear = nn.Linear(2 * config.hidden_size, 1)
         self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob)
 
-        self.similarity_linear = nn.Linear(2 * config.hidden_size, N_STS_CLASSES)
+        self.similarity_linear = nn.Linear(2 * config.hidden_size, 1)
         self.similarity_dropout = nn.Dropout(config.hidden_dropout_prob)
 
 
@@ -116,6 +112,7 @@ class MultitaskBERT(nn.Module):
         embeddings = self.forward(input_ids, attention_mask)
         dropped = self.sentiment_dropout(embeddings)
         logits = self.sentiment_linear(dropped)
+
         return  logits
 
     def predict_paraphrase(self,
@@ -133,9 +130,9 @@ class MultitaskBERT(nn.Module):
         combined_embeddings = torch.cat((embeddings_1, embeddings_2), 1)
         dropped = self.paraphrase_dropout(combined_embeddings)
 
-        logits = self.paraphrase_linear(dropped)
+        logit = self.paraphrase_linear(dropped)
 
-        return  logits
+        return  logit
 
 
     def predict_similarity(self,
@@ -151,9 +148,9 @@ class MultitaskBERT(nn.Module):
         combined_embeddings = torch.cat((embeddings_1, embeddings_2), 1)
         dropped = self.similarity_dropout(combined_embeddings)
 
-        logits = self.similarity_linear(dropped)
+        logit = self.similarity_linear(dropped)
 
-        return  logits
+        return  logit
 
 
 def save_model(model, optimizer, args, config, filepath):
@@ -175,16 +172,12 @@ def sentiment_batch(model: MultitaskBERT, batch):
     b_ids, b_mask, b_labels = (batch['token_ids'],
                                batch['attention_mask'], batch['labels'])
 
-    batch_size = b_ids.size(0)
-
-    assert batch_size == SENTIMENT_BATCH_SIZE
-
     b_ids = b_ids.to(DEVICE)
     b_mask = b_mask.to(DEVICE)
     b_labels = b_labels.to(DEVICE)
 
     logits = model.predict_sentiment(b_ids, b_mask)
-    loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / batch_size
+    loss = F.cross_entropy(logits, b_labels.view(-1))
 
     return loss
 
@@ -196,18 +189,15 @@ def paraphrase_batch(model: MultitaskBERT, batch):
                                                       batch['attention_mask_2'],
                                                       batch['labels'])
 
-    batch_size = b_ids_1.size(0)
-
-    assert batch_size == PARAPHRASE_BATCH_SIZE
-
     b_ids_1 = b_ids_1.to(DEVICE)
     b_mask_1 = b_mask_1.to(DEVICE)
     b_ids_2 = b_ids_2.to(DEVICE)
     b_mask_2 = b_mask_2.to(DEVICE)
     b_labels = b_labels.to(DEVICE)
 
-    logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-    loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / batch_size
+    logit = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+
+    loss = F.binary_cross_entropy_with_logits(logit.view(-1), b_labels.float())
 
     return loss
 
@@ -219,18 +209,15 @@ def semantic_batch(model: MultitaskBERT, batch):
                                                       batch['attention_mask_2'],
                                                       batch['labels'])
 
-    batch_size = b_ids_1.size(0)
-
-    assert batch_size == STS_BATCH_SIZE
-
     b_ids_1 = b_ids_1.to(DEVICE)
     b_mask_1 = b_mask_1.to(DEVICE)
     b_ids_2 = b_ids_2.to(DEVICE)
     b_mask_2 = b_mask_2.to(DEVICE)
     b_labels = b_labels.to(DEVICE)
 
-    logits = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-    loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / batch_size
+
+    logit = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+    loss = F.mse_loss(logit.view(-1), b_labels.float())
 
     return loss
 
@@ -322,8 +309,6 @@ def train_multitask(args):
         # sst_train_acc, _, _, para_train_acc, _, _, sts_train_corr, *_  = model_eval_multitask(sst_train_dataloader, para_train_dataloader, sts_train_dataloader, model, DEVICE)
         sst_dev_acc, _, _, para_dev_acc, _, _, sts_dev_corr, *_ = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, DEVICE)
 
-        sst_train_acc, para_train_acc, sts_train_corr = 0, 0, 0
-
         dev_acc = sst_dev_acc + para_dev_acc + sts_dev_corr
 
         if dev_acc > best_dev_acc:
@@ -331,9 +316,6 @@ def train_multitask(args):
             save_model(model, optimizer, args, config, args.filepath)
 
         print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, dev acc :: {dev_acc :.3f}")
-        print(f"Sentiment train acc :: {sst_train_acc :.3f}, Sentiment dev acc :: {sst_dev_acc :.3f}")
-        print(f"Paraphrase train acc :: {para_train_acc :.3f}, Paraphrase dev acc :: {para_dev_acc :.3f}")
-        print(f"STS train corr :: {sts_train_corr :.3f}, STS dev corr :: {sts_dev_corr :.3f}")
 
     print("Finish training at time:", datetime.now())
 
