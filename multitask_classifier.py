@@ -154,6 +154,9 @@ class MultitaskBERT(nn.Module):
 
 
 def save_model(model, optimizer, args, config, filepath):
+    if isinstance(optimizer, PCGrad):
+        optimizer = optimizer.optimizer
+
     save_info = {
         'model': model.state_dict(),
         'optim': optimizer.state_dict(),
