@@ -308,10 +308,10 @@ def train_multitask(args):
 
             optimizer.zero_grad()
 
-            if args.pcgrad:
-                loss.backward()
-            else:
+            if isinstance(optimizer, PCGrad):
                 optimizer.pc_backward(losses) # type: ignore
+            else:
+                loss.backward()
 
             optimizer.step()
 
