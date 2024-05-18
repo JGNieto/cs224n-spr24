@@ -468,6 +468,7 @@ def get_args():
     parser.add_argument("--last_dropout_prob", type=float, default=0.6)
     parser.add_argument("--lr", type=float, help="learning rate", default=1e-5)
     parser.add_argument("--pcgrad", action='store_true', help='Use PCGrad')
+    parser.add_argument("--eval", type=str, help='Only evaluate the model, no training, specify .pt file')
 
     args = parser.parse_args()
     return args
@@ -476,11 +477,15 @@ def get_args():
 if __name__ == "__main__":
     args = get_args()
 
-    path = datetime.now().strftime('%Y-%m-%d-%H-%M') + f"-{args.fine_tune_mode}-{args.epochs}-{args.lr}-{'pcgrad' if args.pcgrad else 'adamw'}"
+    if args.eval:
+        args.filepath = args.eval
+        test_multitask(args)
+    else:
+        path = datetime.now().strftime('%Y-%m-%d-%H-%M') + f"-{args.fine_tune_mode}-{args.epochs}-{args.lr}-{'pcgrad' if args.pcgrad else 'adamw'}"
 
-    args.filepath = f'{path}-multitask.pt' # Save path.
-    args.stats = f'{path}-stats.txt' # Stats path.
+        args.filepath = f'{path}-multitask.pt' # Save path.
+        args.stats = f'{path}-stats.txt' # Stats path.
 
-    seed_everything(args.seed)  # Fix the seed for reproducibility.
-    train_multitask(args)
-    test_multitask(args)
+        seed_everything(args.seed)  # Fix the seed for reproducibility.
+        train_multitask(args)
+        test_multitask(args)
