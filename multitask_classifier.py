@@ -82,13 +82,13 @@ class MultitaskBERT(nn.Module):
         # You will want to add layers here to perform the downstream tasks.
 
         self.sentiment_linear = nn.Linear(config.hidden_size, 5)
-        self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.sentiment_dropout = nn.Dropout(config.last_dropout_prob)
 
         self.paraphrase_linear = nn.Linear(2 * config.hidden_size, 1)
-        self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.paraphrase_dropout = nn.Dropout(config.last_dropout_prob)
 
         self.similarity_linear = nn.Linear(2 * config.hidden_size, 1)
-        self.similarity_dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.similarity_dropout = nn.Dropout(config.last_dropout_prob)
 
 
     def forward(self, input_ids, attention_mask):
@@ -224,6 +224,11 @@ def semantic_batch(model: MultitaskBERT, batch) -> torch.Tensor:
 
     return loss
 
+def log(string, args):
+    with open(args.stats, "a+") as f:
+        f.write(string + "\n")
+        print(string)
+
 def train_multitask(args):
     '''Train MultitaskBERT.
 
@@ -262,6 +267,7 @@ def train_multitask(args):
 
     # Init model.
     config = {'hidden_dropout_prob': args.hidden_dropout_prob,
+              'last_dropout_prob': args.last_dropout_prob,
               'num_labels': num_labels,
               'hidden_size': BERT_HIDDEN_SIZE,
               'data_dir': '.',
@@ -281,14 +287,17 @@ def train_multitask(args):
 
     num_samples = min(len(sst_train_data), len(para_train_data), len(sts_train_data))
 
-    print("Number of samples:", num_samples)
-    print("Start training at time:", datetime.now())
+    log(f"Number of samples: {num_samples}", args)
+    log("Start training at time: " + str(datetime.now()), args)
+    log(f"Fine-tune mode: {args.fine_tune_mode}", args)
+    log(f"Learning rate: {lr}", args)
+    log(f"Device: {DEVICE}", args)
 
     if args.pcgrad:
-        print("Using PCGrad!")
+        log("Using PCGrad", args)
         optimizer = PCGrad(optimizer)
-
-    print()
+    else:
+        log("Using AdamW", args)
 
     # Run for the specified number of epochs.
     for epoch in range(args.epochs):
@@ -325,17 +334,17 @@ def train_multitask(args):
 
         dev_acc = sst_dev_acc + para_dev_acc + sts_dev_corr
 
-        print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, dev acc :: {dev_acc :.3f}")
+        log(f"Epoch {epoch}: train loss :: {train_loss :.3f}, dev acc :: {dev_acc :.3f}", args)
 
         if dev_acc > best_dev_acc:
-            print(f"New best dev acc :: {dev_acc :.3f} (prev: {best_dev_acc :.3f})")
+            log(f"New best dev acc :: {dev_acc :.3f} (prev: {best_dev_acc :.3f})", args)
             best_dev_acc = dev_acc
             save_model(model, optimizer, args, config, args.filepath)
         else:
-            print(f"Discard model (best dev acc :: {best_dev_acc :.3f})")
+            log(f"Discard model (best dev acc :: {best_dev_acc :.3f})", args)
 
 
-    print("Finish training at time:", datetime.now())
+    log("Finish training at time: " + str(datetime.now()), args)
 
 
 def test_multitask(args):
@@ -456,6 +465,7 @@ def get_args():
 
     parser.add_argument("--batch_size", help='sst: 64, cfimdb: 8 can fit a 12GB GPU', type=int, default=8)
     parser.add_argument("--hidden_dropout_prob", type=float, default=0.3)
+    parser.add_argument("--last_dropout_prob", type=float, default=0.6)
     parser.add_argument("--lr", type=float, help="learning rate", default=1e-5)
     parser.add_argument("--pcgrad", action='store_true', help='Use PCGrad')
 
@@ -465,7 +475,12 @@ def get_args():
 
 if __name__ == "__main__":
     args = get_args()
-    args.filepath = f'{args.fine_tune_mode}-{args.epochs}-{args.lr}-multitask.pt' # Save path.
+
+    path = datetime.now().strftime('%Y-%m-%d-%H-%M') + f"-{args.fine_tune_mode}-{args.epochs}-{args.lr}-{'pcgrad' if args.pcgrad else 'adamw'}"
+
+    args.filepath = f'{path}-multitask.pt' # Save path.
+    args.stats = f'{path}-stats.txt' # Stats path.
+
     seed_everything(args.seed)  # Fix the seed for reproducibility.
     train_multitask(args)
     test_multitask(args)
