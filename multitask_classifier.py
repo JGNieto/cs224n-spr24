@@ -278,8 +278,11 @@ def train_multitask(args):
     model = MultitaskBERT(config)
     model = model.to(DEVICE)
 
-    # UNCOMMENT this line to use DoRA
-    # replace_linear_with_dora(model)
+    if args.dora:
+        log("Using DoRA", args)
+        replace_linear_with_dora(model)
+    else:
+        log("Not using DoRA", args)
 
     lr = args.lr
     optimizer: AdamW | PCGrad = AdamW(model.parameters(), lr=lr)
@@ -467,7 +470,8 @@ def get_args():
     parser.add_argument("--hidden_dropout_prob", type=float, default=0.3)
     parser.add_argument("--last_dropout_prob", type=float, default=0.6)
     parser.add_argument("--lr", type=float, help="learning rate", default=1e-5)
-    parser.add_argument("--pcgrad", action='store_true', help='Use PCGrad')
+    parser.add_argument("--pcgrad", action='store_true', help='Use PCGrad instead of plain AdamW')
+    parser.add_argument("--dora", action='store_true', help='Use DoRA PEFT')
     parser.add_argument("--eval", type=str, help='Only evaluate the model, no training, specify .pt file')
 
     args = parser.parse_args()
