@@ -485,7 +485,7 @@ if __name__ == "__main__":
         args.filepath = args.eval
         test_multitask(args)
     else:
-        path = datetime.now().strftime('%Y-%m-%d-%H-%M') + f"-{args.fine_tune_mode}-{args.epochs}-{args.lr}-{'pcgrad' if args.pcgrad else 'adamw'}"
+        path = datetime.now().strftime('%Y-%m-%d-%H-%M') + f"-{args.fine_tune_mode}-{args.epochs}-{args.lr}-{'pcgrad' if args.pcgrad else 'adamw'}-{'dora' if args.dora else 'swiper'}"
 
         args.filepath = f'{path}-multitask.pt' # Save path.
         args.stats = f'{path}-stats.txt' # Stats path.
