@@ -220,7 +220,8 @@ def semantic_batch(model: MultitaskBERT, batch) -> torch.Tensor:
 
 
     logit = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-    loss = F.mse_loss(logit.view(-1), b_labels.float())
+    # loss = F.mse_loss(logit.view(-1), b_labels.float())
+    loss = F.smooth_l1_loss(logit.view(-1), b_labels.float())
 
     return loss
 
@@ -404,7 +405,7 @@ def test_multitask(args):
                                           sts_test_dataloader, model, DEVICE)
 
         with open(args.sst_dev_out, "w+") as f:
-            print(f"dev sentiment acc :: {dev_sentiment_accuracy :.3f}")
+            log(f"dev sentiment acc :: {dev_sentiment_accuracy :.3f}", args)
             f.write(f"id \t Predicted_Sentiment \n")
             for p, s in zip(dev_sst_sent_ids, dev_sst_y_pred):
                 f.write(f"{p} , {s} \n")
@@ -415,7 +416,7 @@ def test_multitask(args):
                 f.write(f"{p} , {s} \n")
 
         with open(args.para_dev_out, "w+") as f:
-            print(f"dev paraphrase acc :: {dev_paraphrase_accuracy :.3f}")
+            log(f"dev paraphrase acc :: {dev_paraphrase_accuracy :.3f}", args)
             f.write(f"id \t Predicted_Is_Paraphrase \n")
             for p, s in zip(dev_para_sent_ids, dev_para_y_pred):
                 f.write(f"{p} , {s} \n")
@@ -426,7 +427,7 @@ def test_multitask(args):
                 f.write(f"{p} , {s} \n")
 
         with open(args.sts_dev_out, "w+") as f:
-            print(f"dev sts corr :: {dev_sts_corr :.3f}")
+            log(f"dev sts corr :: {dev_sts_corr :.3f}", args)
             f.write(f"id \t Predicted_Similiary \n")
             for p, s in zip(dev_sts_sent_ids, dev_sts_y_pred):
                 f.write(f"{p} , {s} \n")
@@ -482,13 +483,15 @@ if __name__ == "__main__":
     args = get_args()
 
     if args.eval:
+        path = datetime.now().strftime('%Y-%m-%d-%H-%M')
         args.filepath = args.eval
+        args.stats = f'./output/test-{path}-stats.txt' # Stats path.
         test_multitask(args)
     else:
         path = datetime.now().strftime('%Y-%m-%d-%H-%M') + f"-{args.fine_tune_mode}-{args.epochs}-{args.lr}-{'pcgrad' if args.pcgrad else 'adamw'}-{'dora' if args.dora else 'swiper'}"
 
-        args.filepath = f'{path}-multitask.pt' # Save path.
-        args.stats = f'{path}-stats.txt' # Stats path.
+        args.filepath = f'./output/{path}-multitask.pt' # Save path.
+        args.stats = f'./output/{path}-stats.txt' # Stats path.
 
         seed_everything(args.seed)  # Fix the seed for reproducibility.
         train_multitask(args)
