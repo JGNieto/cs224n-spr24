@@ -39,7 +39,7 @@ class DoRALayer(nn.Module):
         calc_weights = self.m * norm_adapted
         return F.linear(x, calc_weights, self.bias)
     
-def replace_linear_with_dora(model):
+def replace_linear_with_dora(model, DEVICE):
     for name, module in model.named_children():
         if isinstance(module, nn.Linear):
             # Get the input and output dimensions of the current nn.Linear layer
@@ -47,8 +47,10 @@ def replace_linear_with_dora(model):
             d_out = module.out_features
 
             # Create a new DoRALayer with the same dimensions
-            setattr(model, name, DoRALayer(d_out=d_out, d_in=d_in, weight=module.weight.data.clone(), bias=module.bias.data.clone()))
+            dora = DoRALayer(d_out=d_out, d_in=d_in, weight=module.weight.data.clone(), bias=module.bias.data.clone())
+            dora.to(DEVICE)
+            setattr(model, name, dora)
         else:
             # Recursively apply this function to submodules
-            replace_linear_with_dora(module)
+            replace_linear_with_dora(module, DEVICE)
 

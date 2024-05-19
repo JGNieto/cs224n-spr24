@@ -280,7 +280,7 @@ def train_multitask(args):
 
     if args.dora:
         log("Using DoRA", args)
-        replace_linear_with_dora(model)
+        replace_linear_with_dora(model, DEVICE)
     else:
         log("Not using DoRA", args)
 
