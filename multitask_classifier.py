@@ -331,10 +331,10 @@ def train_multitask(args):
             l2_weight = 0.7
             # Compute L1 and L2 loss component
             parameters = []
-            for parameter in MultitaskBERT.parameters():
+            for parameter in model.parameters():
                 parameters.append(parameter.view(-1))
-            l1 = l1_weight * MultitaskBERT.compute_l1_loss(torch.cat(parameters))
-            l2 = l2_weight * MultitaskBERT.compute_l2_loss(torch.cat(parameters))
+            l1 = l1_weight * model.compute_l1_loss(torch.cat(parameters))
+            l2 = l2_weight * model.compute_l2_loss(torch.cat(parameters))
             
             # Regularization: Add L1 and L2 loss components
             loss += l1
