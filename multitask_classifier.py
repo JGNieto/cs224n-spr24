@@ -152,6 +152,12 @@ class MultitaskBERT(nn.Module):
         logit = self.similarity_linear(dropped)
 
         return  logit
+    
+    def compute_l1_loss(self, w):
+      return torch.abs(w).sum()
+  
+    def compute_l2_loss(self, w):
+        return torch.square(w).sum()
 
 
 def save_model(model, optimizer, args, config, filepath):
@@ -319,6 +325,20 @@ def train_multitask(args):
 
             losses = [sentiment_loss, paraphrase_loss, semantic_loss]
             loss: torch.Tensor = sum(losses) # type: ignore
+            
+            # Specify L1 and L2 weights
+            l1_weight = 0.3
+            l2_weight = 0.7
+            # Compute L1 and L2 loss component
+            parameters = []
+            for parameter in MultitaskBERT.parameters():
+                parameters.append(parameter.view(-1))
+            l1 = l1_weight * MultitaskBERT.compute_l1_loss(torch.cat(parameters))
+            l2 = l2_weight * MultitaskBERT.compute_l2_loss(torch.cat(parameters))
+            
+            # Regularization: Add L1 and L2 loss components
+            loss += l1
+            loss += l2
 
             optimizer.zero_grad()
 
