@@ -1,0 +1,31 @@
+Not using DoRA
+Number of samples: 6040
+Start training at time: 2024-05-19 22:23:19.701519
+Fine-tune mode: full-model
+Learning rate: 1e-05
+Device: cuda
+Using PCGrad
+Epoch 0: train loss :: 2.933, dev acc :: 1.468
+New best dev acc :: 1.468 (prev: 0.000)
+Epoch 1: train loss :: 2.488, dev acc :: 1.545
+New best dev acc :: 1.545 (prev: 1.468)
+Epoch 2: train loss :: 2.270, dev acc :: 1.600
+New best dev acc :: 1.600 (prev: 1.545)
+Epoch 3: train loss :: 2.057, dev acc :: 1.569
+Discard model (best dev acc :: 1.600)
+Epoch 4: train loss :: 1.862, dev acc :: 1.561
+Discard model (best dev acc :: 1.600)
+Epoch 5: train loss :: 1.681, dev acc :: 1.577
+Discard model (best dev acc :: 1.600)
+Epoch 6: train loss :: 1.493, dev acc :: 1.530
+Discard model (best dev acc :: 1.600)
+Epoch 7: train loss :: 1.338, dev acc :: 1.572
+Discard model (best dev acc :: 1.600)
+Epoch 8: train loss :: 1.188, dev acc :: 1.556
+Discard model (best dev acc :: 1.600)
+Epoch 9: train loss :: 1.098, dev acc :: 1.559
+Discard model (best dev acc :: 1.600)
+Finish training at time: 2024-05-20 00:03:25.900577
+dev sentiment acc :: 0.516
+dev paraphrase acc :: 0.726
+dev sts corr :: 0.359
