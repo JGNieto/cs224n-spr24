@@ -237,6 +237,9 @@ def log(string, args):
         f.write(string + "\n")
         print(string)
 
+def overall_score(sst_acc, para_acc, sts_corr):
+    return sst_acc / 3.0 + para_acc / 3.0 + (sts_corr + 1) / 6.0
+
 def train_multitask(args):
     '''Train MultitaskBERT.
 
@@ -357,7 +360,7 @@ def train_multitask(args):
         # sst_train_acc, _, _, para_train_acc, _, _, sts_train_corr, *_  = model_eval_multitask(sst_train_dataloader, para_train_dataloader, sts_train_dataloader, model, DEVICE)
         sst_dev_acc, _, _, para_dev_acc, _, _, sts_dev_corr, *_ = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, DEVICE)
 
-        dev_acc = sst_dev_acc + para_dev_acc + sts_dev_corr
+        dev_acc = overall_score(sst_dev_acc, para_dev_acc, sts_dev_corr)
 
         log(f"Epoch {epoch}: train loss :: {train_loss :.3f}, dev acc :: {dev_acc :.3f}", args)
 
