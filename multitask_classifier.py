@@ -154,7 +154,7 @@ class MultitaskBERT(nn.Module):
         return  logit
     
     def compute_l1_loss(self, w):
-      return torch.abs(w).sum()
+        return torch.abs(w).sum()
   
     def compute_l2_loss(self, w):
         return torch.square(w).sum()
@@ -494,6 +494,7 @@ def get_args():
     parser.add_argument("--lr", type=float, help="learning rate", default=1e-5)
     parser.add_argument("--pcgrad", action='store_true', help='Use PCGrad instead of plain AdamW')
     parser.add_argument("--dora", action='store_true', help='Use DoRA PEFT')
+    parser.add_argument("--l1l2", action='store_true', help='Use L1 L2 Loss')
     parser.add_argument("--eval", type=str, help='Only evaluate the model, no training, specify .pt file')
 
     args = parser.parse_args()
@@ -509,7 +510,7 @@ if __name__ == "__main__":
         args.stats = f'./output/test-{path}-stats.txt' # Stats path.
         test_multitask(args)
     else:
-        path = datetime.now().strftime('%Y-%m-%d-%H-%M') + f"-{args.fine_tune_mode}-{args.epochs}-{args.lr}-{'pcgrad' if args.pcgrad else 'adamw'}-{'dora' if args.dora else 'swiper'}"
+        path = datetime.now().strftime('%Y-%m-%d-%H-%M') + f"-{args.fine_tune_mode}-{args.epochs}-{args.lr}-{'pcgrad' if args.pcgrad else 'adamw'}-{'dora' if args.dora else 'swiper'}-{'l1l2' if args.l1l2 else 'regloss'}"
 
         args.filepath = f'./output/{path}-multitask.pt' # Save path.
         args.stats = f'./output/{path}-stats.txt' # Stats path.
