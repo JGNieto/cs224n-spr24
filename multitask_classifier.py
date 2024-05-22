@@ -284,6 +284,7 @@ def train_multitask(args):
     config = SimpleNamespace(**config)
 
     model = MultitaskBERT(config)
+    model = torch.nn.DataParallel(model)
     model = model.to(DEVICE)
 
     if args.dora:
