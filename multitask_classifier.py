@@ -238,15 +238,144 @@ def log(string, args):
         print(string)
 
 def overall_score(sst_acc, para_acc, sts_corr):
-    return sst_acc / 3.0 + para_acc / 3.0 + (sts_corr + 1) / 6.0
+    scores = []
+    if sst_acc is not None:
+        scores.append(sst_acc)
+    if para_acc is not None:
+        scores.append(para_acc)
+    if sts_corr is not None:
+        scores.append((sts_corr + 1) / 2)
+
+    return np.mean(scores)
+
+def train_single_task(args):
+    train_data = None
+    dev_data = None
+
+    train_dataloader = None
+    sst_dev_dataloader = None
+    para_dev_dataloader = None
+    sts_dev_dataloader = None
+
+    function = None
+
+    sst_train_data, num_labels,para_train_data, sts_train_data = load_multitask_data(args.sst_train,args.para_train,args.sts_train, split ='train')
+    sst_dev_data, num_labels,para_dev_data, sts_dev_data = load_multitask_data(args.sst_dev,args.para_dev,args.sts_dev, split ='train')
+
+    if args.task == 'sst':
+        train_data = SentenceClassificationDataset(sst_train_data, args)
+        dev_data = SentenceClassificationDataset(sst_dev_data, args)
+
+        train_dataloader = DataLoader(train_data, shuffle=True, batch_size=SENTIMENT_BATCH_SIZE,
+                                          collate_fn=train_data.collate_fn)
+        sst_dev_dataloader = DataLoader(dev_data, shuffle=False, batch_size=SENTIMENT_BATCH_SIZE,
+                                        collate_fn=dev_data.collate_fn)
+        function = sentiment_batch
+
+    elif args.task == 'para':
+        train_data = SentencePairDataset(train_data, args)
+        dev_data = SentencePairDataset(dev_data, args)
+
+        train_dataloader = DataLoader(train_data, shuffle=True, batch_size=PARAPHRASE_BATCH_SIZE,
+                                          collate_fn=train_data.collate_fn)
+        para_dev_dataloader = DataLoader(dev_data, shuffle=False, batch_size=PARAPHRASE_BATCH_SIZE,
+                                         collate_fn=dev_data.collate_fn)
+        function = paraphrase_batch
+
+    elif args.task == 'sts':
+        train_data = SentencePairDataset(train_data, args)
+        dev_data = SentencePairDataset(dev_data, args, isRegression=True)
+
+        train_dataloader = DataLoader(train_data, shuffle=True, batch_size=STS_BATCH_SIZE,
+                                         collate_fn=train_data.collate_fn)
+        sts_dev_dataloader = DataLoader(dev_data, shuffle=False, batch_size=STS_BATCH_SIZE,
+                                            collate_fn=dev_data.collate_fn)
+        function = semantic_batch
+
+    else:
+        print("Invalid task")
+        exit(1)
+
+    # Init model.
+    config = {'hidden_dropout_prob': args.hidden_dropout_prob,
+              'last_dropout_prob': args.last_dropout_prob,
+              'num_labels': num_labels,
+              'hidden_size': BERT_HIDDEN_SIZE,
+              'data_dir': '.',
+              'fine_tune_mode': args.fine_tune_mode}
+
+    config = SimpleNamespace(**config)
+
+    model = MultitaskBERT(config)
+    if args.parallel:
+        model = torch.nn.DataParallel(model)
+    else:
+        model = model.to(DEVICE)
+
+    if args.load:
+        saved = torch.load(args.load, device=DEVICE)
+        model.load_state_dict(saved['model'])
+        config = saved['model_config']
+        log(f"Loaded model from {args.load}", args)
+    else:
+        if args.dora:
+            log("Using DoRA", args)
+            replace_linear_with_dora(model, DEVICE)
+        else:
+            log("Not using DoRA", args)
+
+    lr = args.lr
+    optimizer: AdamW = AdamW(model.parameters(), lr=lr, weight_decay=args.decay)
+    best_dev_acc = 0
+
+    log("Start training at time: " + str(datetime.now()), args)
+    log(f"Fine-tune mode: {args.fine_tune_mode}", args)
+    log(f"Learning rate: {lr}", args)
+    log(f"Device: {DEVICE}", args)
+    log("Using AdamW", args)
+
+    # Run for the specified number of epochs.
+    for epoch in range(args.epochs):
+        print()
+
+        model.train()
+        train_loss = 0
+        num_batches = 0
+
+        for batch in tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
+            loss = function(model, batch)
+
+            optimizer.zero_grad()
+
+            loss.backward()
+
+            optimizer.step()
+
+            train_loss += loss.item()
+            num_batches += 1
+
+        train_loss = train_loss / num_batches
+
+        # sst_train_acc, _, _, para_train_acc, _, _, sts_train_corr, *_  = model_eval_multitask(sst_train_dataloader, para_train_dataloader, sts_train_dataloader, model, DEVICE)
+        sst_dev_acc, _, _, para_dev_acc, _, _, sts_dev_corr, *_ = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, DEVICE)
+
+        dev_acc = overall_score(sst_dev_acc, para_dev_acc, sts_dev_corr)
+
+        log(f"Epoch {epoch}: train loss :: {train_loss :.3f}, dev acc :: {dev_acc :.3f}", args)
+
+        if dev_acc > best_dev_acc:
+            log(f"New best dev acc :: {dev_acc :.3f} (prev: {best_dev_acc :.3f})", args)
+            best_dev_acc = dev_acc
+            save_model(model, optimizer, args, config, args.filepath)
+        else:
+            log(f"Discard model (best dev acc :: {best_dev_acc :.3f})", args)
+
+
+    log("Finish training at time: " + str(datetime.now()), args)
+
 
 def train_multitask(args):
     '''Train MultitaskBERT.
-
-    Currently only trains on SST dataset. The way you incorporate training examples
-    from other datasets into the training procedure is up to you. To begin, take a
-    look at test_multitask below to see how you can use the custom torch `Dataset`s
-    in datasets.py to load in examples from the Quora and SemEval datasets.
     '''
     # Create the data and its corresponding datasets and dataloader.
     sst_train_data, num_labels,para_train_data, sts_train_data = load_multitask_data(args.sst_train,args.para_train,args.sts_train, split ='train')
@@ -292,14 +421,20 @@ def train_multitask(args):
     else:
         model = model.to(DEVICE)
 
-    if args.dora:
-        log("Using DoRA", args)
-        replace_linear_with_dora(model, DEVICE)
+    if args.load:
+        saved = torch.load(args.load, device=DEVICE)
+        model.load_state_dict(saved['model'])
+        config = saved['model_config']
+        log(f"Loaded model from {args.load}", args)
     else:
-        log("Not using DoRA", args)
+        if args.dora:
+            log("Using DoRA", args)
+            replace_linear_with_dora(model, DEVICE)
+        else:
+            log("Not using DoRA", args)
 
     lr = args.lr
-    optimizer: AdamW | PCGrad = AdamW(model.parameters(), lr=lr)
+    optimizer: AdamW | PCGrad = AdamW(model.parameters(), lr=lr, weight_decay=args.decay)
     best_dev_acc = 0
 
     num_samples = min(len(sst_train_data), len(para_train_data), len(sts_train_data))
@@ -332,19 +467,20 @@ def train_multitask(args):
             losses = [sentiment_loss, paraphrase_loss, semantic_loss]
             loss: torch.Tensor = sum(losses) # type: ignore
             
-            # Specify L1 and L2 weights
-            l1_weight = 0.3
-            l2_weight = 0.7
-            # Compute L1 and L2 loss component
-            parameters = []
-            for parameter in model.parameters():
-                parameters.append(parameter.view(-1))
-            l1 = l1_weight * model.compute_l1_loss(torch.cat(parameters))
-            l2 = l2_weight * model.compute_l2_loss(torch.cat(parameters))
-            
-            # Regularization: Add L1 and L2 loss components
-            loss += l1
-            loss += l2
+            if args.l1l2:
+                # Specify L1 and L2 weights
+                l1_weight = 0.3
+                l2_weight = 0.7
+                # Compute L1 and L2 loss component
+                parameters = []
+                for parameter in model.parameters():
+                    parameters.append(parameter.view(-1))
+                l1 = l1_weight * model.compute_l1_loss(torch.cat(parameters))
+                l2 = l2_weight * model.compute_l2_loss(torch.cat(parameters))
+                
+                # Regularization: Add L1 and L2 loss components
+                loss += l1
+                loss += l2
 
             optimizer.zero_grad()
 
@@ -381,16 +517,15 @@ def train_multitask(args):
 def test_multitask(args):
     '''Test and save predictions on the dev and test sets of all three tasks.'''
     with torch.no_grad():
-        saved = torch.load(args.filepath)
+        saved = torch.load(args.filepath, device=DEVICE)
         config = saved['model_config']
 
         model = MultitaskBERT(config)
         if args.parallel:
             model = torch.nn.DataParallel(model)
-            model.load_state_dict(saved['model'])
         else:
-            model.load_state_dict(saved['model'])
             model = model.to(DEVICE)
+        model.load_state_dict(saved['model'])
         print(f"Loaded model to test from {args.filepath}")
 
         sst_test_data, num_labels,para_test_data, sts_test_data = \
@@ -498,15 +633,19 @@ def get_args():
     parser.add_argument("--sts_dev_out", type=str, default="predictions/sts-dev-output.csv")
     parser.add_argument("--sts_test_out", type=str, default="predictions/sts-test-output.csv")
 
-    parser.add_argument("--batch_size", help='sst: 64, cfimdb: 8 can fit a 12GB GPU', type=int, default=8)
+    parser.add_argument("--batch_size", help='ONLY TEST sst: 64, cfimdb: 8 can fit a 12GB GPU', type=int, default=8)
     parser.add_argument("--hidden_dropout_prob", type=float, default=0.3)
-    parser.add_argument("--last_dropout_prob", type=float, default=0.6)
-    parser.add_argument("--lr", type=float, help="learning rate", default=1e-5)
-    parser.add_argument("--pcgrad", action='store_true', help='Use PCGrad instead of plain AdamW')
+    parser.add_argument("--last_dropout_prob", type=float, default=0.4)
+    parser.add_argument("--lr", type=float, help="learning rate", default=5e-5)
+
+    parser.add_argument("--pcgrad", action='store_true', help='Use PCGrad instead of plain AdamW (only for multitask training)')
     parser.add_argument("--dora", action='store_true', help='Use DoRA PEFT')
     parser.add_argument("--l1l2", action='store_true', help='Use L1 L2 Loss')
-    parser.add_argument("--eval", type=str, help='Only evaluate the model, no training, specify .pt file')
+    parser.add_argument("--eval", action='store_true', help='Only evaluate the model, no training. Must use --load to specify .pt file')
     parser.add_argument("--parallel", action='store_true', help='Use parallel training')
+    parser.add_argument("--task", type=str, help='sst for sentiment analysis, para for paraphrase detection, sts for semantic textual similarity and multi for multitask training all of them at once (by dafult, multitask training)', choices=('sst', 'para', 'sts', 'multi'), default='multi')
+    parser.add_argument("--load", type=str, help='Load model from file')
+    parser.add_argument("--decay", type=float, help='Weight decay', default=0.01)
 
     args = parser.parse_args()
     return args
@@ -517,15 +656,24 @@ if __name__ == "__main__":
 
     if args.eval:
         path = datetime.now().strftime('%Y-%m-%d-%H-%M')
-        args.filepath = args.eval
+        if not args.load:
+            print("You must specify a .pt file using --load to load the model from.")
+            exit(1)
+        args.filepath = args.load
         args.stats = f'./output/test-{path}-stats.txt' # Stats path.
         test_multitask(args)
     else:
         path = datetime.now().strftime('%Y-%m-%d-%H-%M') + f"-{args.fine_tune_mode}-{args.epochs}-{args.lr}-{'pcgrad' if args.pcgrad else 'adamw'}-{'dora' if args.dora else 'swiper'}-{'l1l2' if args.l1l2 else 'regloss'}"
 
-        args.filepath = f'./output/{path}-multitask.pt' # Save path.
-        args.stats = f'./output/{path}-stats.txt' # Stats path.
-
         seed_everything(args.seed)  # Fix the seed for reproducibility.
-        train_multitask(args)
+
+        if args.task == 'multi':
+            args.filepath = f'./output/{path}-multitask.pt' # Save path.
+            args.stats = f'./output/{path}-multitask-stats.txt' # Stats path.
+            train_multitask(args)
+        else:
+            args.filepath = f'./output/{path}-{args.task}.pt' # Save path.
+            args.stats = f'./output/{path}-{args.task}-stats.txt' # Stats path.
+            train_single_task(args)
+
         test_multitask(args)
