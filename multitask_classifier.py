@@ -383,6 +383,7 @@ def test_multitask(args):
         config = saved['model_config']
 
         model = MultitaskBERT(config)
+        model = torch.nn.DataParallel(model)
         model.load_state_dict(saved['model'])
         model = model.to(DEVICE)
         print(f"Loaded model to test from {args.filepath}")
