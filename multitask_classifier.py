@@ -178,7 +178,7 @@ def save_model(model, optimizer, args, config, filepath):
     print(f"save the model to {filepath}")
 
 # Custom function
-def sentiment_batch(model: MultitaskBERT, batch) -> torch.Tensor:
+def sentiment_batch(model: nn.Module, batch) -> torch.Tensor:
     b_ids, b_mask, b_labels = (batch['token_ids'],
                                batch['attention_mask'], batch['labels'])
 
@@ -192,7 +192,7 @@ def sentiment_batch(model: MultitaskBERT, batch) -> torch.Tensor:
     return loss
 
 # Custom function
-def paraphrase_batch(model: MultitaskBERT, batch) -> torch.Tensor:
+def paraphrase_batch(model: nn.Module, batch) -> torch.Tensor:
     b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'],
                                                       batch['attention_mask_1'],
                                                       batch['token_ids_2'],
@@ -212,7 +212,7 @@ def paraphrase_batch(model: MultitaskBERT, batch) -> torch.Tensor:
     return loss
 
 # Custom function
-def semantic_batch(model: MultitaskBERT, batch) -> torch.Tensor:
+def semantic_batch(model: nn.Module, batch) -> torch.Tensor:
     b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'],
                                                       batch['attention_mask_1'],
                                                       batch['token_ids_2'],
@@ -287,8 +287,10 @@ def train_multitask(args):
     config = SimpleNamespace(**config)
 
     model = MultitaskBERT(config)
-    model = torch.nn.DataParallel(model)
-    model = model.to(DEVICE)
+    if args.parallel:
+        model = torch.nn.DataParallel(model)
+    else:
+        model = model.to(DEVICE)
 
     if args.dora:
         log("Using DoRA", args)
@@ -383,9 +385,12 @@ def test_multitask(args):
         config = saved['model_config']
 
         model = MultitaskBERT(config)
-        model = torch.nn.DataParallel(model)
-        model.load_state_dict(saved['model'])
-        model = model.to(DEVICE)
+        if args.parallel:
+            model = torch.nn.DataParallel(model)
+            model.load_state_dict(saved['model'])
+        else:
+            model.load_state_dict(saved['model'])
+            model = model.to(DEVICE)
         print(f"Loaded model to test from {args.filepath}")
 
         sst_test_data, num_labels,para_test_data, sts_test_data = \
@@ -501,6 +506,7 @@ def get_args():
     parser.add_argument("--dora", action='store_true', help='Use DoRA PEFT')
     parser.add_argument("--l1l2", action='store_true', help='Use L1 L2 Loss')
     parser.add_argument("--eval", type=str, help='Only evaluate the model, no training, specify .pt file')
+    parser.add_argument("--parallel", action='store_true', help='Use parallel training')
 
     args = parser.parse_args()
     return args
