@@ -154,7 +154,7 @@ class MultitaskBERT(nn.Module):
         return  logit
     
     def compute_l1_loss(self, w):
-      return torch.abs(w).sum()
+        return torch.abs(w).sum()
   
     def compute_l2_loss(self, w):
         return torch.square(w).sum()
@@ -236,6 +236,9 @@ def log(string, args):
     with open(args.stats, "a+") as f:
         f.write(string + "\n")
         print(string)
+
+def overall_score(sst_acc, para_acc, sts_corr):
+    return sst_acc / 3.0 + para_acc / 3.0 + (sts_corr + 1) / 6.0
 
 def train_multitask(args):
     '''Train MultitaskBERT.
@@ -358,7 +361,7 @@ def train_multitask(args):
         # sst_train_acc, _, _, para_train_acc, _, _, sts_train_corr, *_  = model_eval_multitask(sst_train_dataloader, para_train_dataloader, sts_train_dataloader, model, DEVICE)
         sst_dev_acc, _, _, para_dev_acc, _, _, sts_dev_corr, *_ = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, DEVICE)
 
-        dev_acc = sst_dev_acc + para_dev_acc + sts_dev_corr
+        dev_acc = overall_score(sst_dev_acc, para_dev_acc, sts_dev_corr)
 
         log(f"Epoch {epoch}: train loss :: {train_loss :.3f}, dev acc :: {dev_acc :.3f}", args)
 
@@ -495,6 +498,7 @@ def get_args():
     parser.add_argument("--lr", type=float, help="learning rate", default=1e-5)
     parser.add_argument("--pcgrad", action='store_true', help='Use PCGrad instead of plain AdamW')
     parser.add_argument("--dora", action='store_true', help='Use DoRA PEFT')
+    parser.add_argument("--l1l2", action='store_true', help='Use L1 L2 Loss')
     parser.add_argument("--eval", type=str, help='Only evaluate the model, no training, specify .pt file')
 
     args = parser.parse_args()
@@ -510,7 +514,7 @@ if __name__ == "__main__":
         args.stats = f'./output/test-{path}-stats.txt' # Stats path.
         test_multitask(args)
     else:
-        path = datetime.now().strftime('%Y-%m-%d-%H-%M') + f"-{args.fine_tune_mode}-{args.epochs}-{args.lr}-{'pcgrad' if args.pcgrad else 'adamw'}-{'dora' if args.dora else 'swiper'}"
+        path = datetime.now().strftime('%Y-%m-%d-%H-%M') + f"-{args.fine_tune_mode}-{args.epochs}-{args.lr}-{'pcgrad' if args.pcgrad else 'adamw'}-{'dora' if args.dora else 'swiper'}-{'l1l2' if args.l1l2 else 'regloss'}"
 
         args.filepath = f'./output/{path}-multitask.pt' # Save path.
         args.stats = f'./output/{path}-stats.txt' # Stats path.
