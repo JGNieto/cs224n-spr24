@@ -40,6 +40,8 @@ from dora import replace_linear_with_dora
 
 from datetime import datetime
 
+import os
+
 TQDM_DISABLE=False
 
 
@@ -650,9 +652,9 @@ def get_args():
     args = parser.parse_args()
     return args
 
-
-if __name__ == "__main__":
-    args = get_args()
+def run(args):
+    if not os.path.exists("./output"):
+        os.makedirs("./output")
 
     if args.eval:
         path = datetime.now().strftime('%Y-%m-%d-%H-%M')
@@ -677,3 +679,8 @@ if __name__ == "__main__":
             train_single_task(args)
 
         test_multitask(args)
+
+if __name__ == "__main__":
+    args = get_args()
+    run(args)
+
