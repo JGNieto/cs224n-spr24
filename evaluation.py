@@ -130,9 +130,12 @@ def model_eval_multitask(sentiment_dataloader,
             pearson_mat = np.corrcoef(sts_y_pred,sts_y_true)
             sts_corr = pearson_mat[1][0]
 
-        print(f'Sentiment classification accuracy: {sentiment_accuracy:.3f}')
-        print(f'Paraphrase detection accuracy: {paraphrase_accuracy:.3f}')
-        print(f'Semantic Textual Similarity correlation: {sts_corr:.3f}')
+        if sentiment_accuracy is not None:
+            print(f'Sentiment classification accuracy: {sentiment_accuracy:.3f}')
+        if paraphrase_accuracy is not None:
+            print(f'Paraphrase detection accuracy: {paraphrase_accuracy:.3f}')
+        if sts_corr is not None:
+            print(f'Semantic Textual Similarity correlation: {sts_corr:.3f}')
 
         return (sentiment_accuracy,sst_y_pred, sst_sent_ids,
                 paraphrase_accuracy, para_y_pred, para_sent_ids,
@@ -165,7 +168,12 @@ def model_eval_test_multitask(sentiment_dataloader,
         # Evaluate paraphrase detection.
         para_y_pred = []
         para_sent_ids = []
+        para_n = 0
         for step, batch in enumerate(tqdm(paraphrase_dataloader, desc=f'eval', disable=TQDM_DISABLE)):
+            if para_n > 200:
+                break
+            para_n += 1
+
             (b_ids1, b_mask1,
              b_ids2, b_mask2,
              b_sent_ids) = (batch['token_ids_1'], batch['attention_mask_1'],

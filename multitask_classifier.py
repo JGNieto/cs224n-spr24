@@ -90,6 +90,9 @@ class MultitaskBERT(nn.Module):
         self.paraphrase_linear = nn.Linear(2 * config.hidden_size, 1)
         self.paraphrase_dropout = nn.Dropout(config.last_dropout_prob)
 
+        self.similarity_ff1 = nn.Linear(2 * config.hidden_size, 2 * config.hidden_size)
+        self.similarity_ff1_dropout = nn.Dropout(config.last_dropout_prob)
+
         self.similarity_linear = nn.Linear(2 * config.hidden_size, 1)
         self.similarity_dropout = nn.Dropout(config.last_dropout_prob)
 
@@ -151,7 +154,11 @@ class MultitaskBERT(nn.Module):
         combined_embeddings = torch.cat((embeddings_1, embeddings_2), 1)
         dropped = self.similarity_dropout(combined_embeddings)
 
-        logit = self.similarity_linear(dropped)
+        ff1 = self.similarity_ff1(dropped)
+        ff1_relu = F.relu(ff1)
+        ff1_dropped = self.similarity_ff1_dropout(ff1_relu)
+
+        logit = self.similarity_linear(ff1_dropped)
 
         return  logit
     
@@ -229,8 +236,8 @@ def semantic_batch(model: nn.Module, batch) -> torch.Tensor:
 
 
     logit = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-    # loss = F.mse_loss(logit.view(-1), b_labels.float())
-    loss = F.smooth_l1_loss(logit.view(-1), b_labels.float())
+    loss = F.mse_loss(logit.view(-1), b_labels.float())
+    # loss = F.smooth_l1_loss(logit.view(-1), b_labels.float())
 
     return loss
 
@@ -275,8 +282,8 @@ def train_single_task(args):
         function = sentiment_batch
 
     elif args.task == 'para':
-        train_data = SentencePairDataset(train_data, args)
-        dev_data = SentencePairDataset(dev_data, args)
+        train_data = SentencePairDataset(para_train_data, args)
+        dev_data = SentencePairDataset(para_dev_data, args)
 
         train_dataloader = DataLoader(train_data, shuffle=True, batch_size=PARAPHRASE_BATCH_SIZE,
                                           collate_fn=train_data.collate_fn)
@@ -285,8 +292,8 @@ def train_single_task(args):
         function = paraphrase_batch
 
     elif args.task == 'sts':
-        train_data = SentencePairDataset(train_data, args)
-        dev_data = SentencePairDataset(dev_data, args, isRegression=True)
+        train_data = SentencePairDataset(sts_train_data, args)
+        dev_data = SentencePairDataset(sts_dev_data, args, isRegression=True)
 
         train_dataloader = DataLoader(train_data, shuffle=True, batch_size=STS_BATCH_SIZE,
                                          collate_fn=train_data.collate_fn)
@@ -329,6 +336,7 @@ def train_single_task(args):
     lr = args.lr
     optimizer: AdamW = AdamW(model.parameters(), lr=lr, weight_decay=args.decay)
     best_dev_acc = 0
+    n_discarded = 0
 
     log("Start training at time: " + str(datetime.now()), args)
     log(f"Fine-tune mode: {args.fine_tune_mode}", args)
@@ -369,8 +377,13 @@ def train_single_task(args):
             log(f"New best dev acc :: {dev_acc :.3f} (prev: {best_dev_acc :.3f})", args)
             best_dev_acc = dev_acc
             save_model(model, optimizer, args, config, args.filepath)
+            n_discarded = 0
         else:
             log(f"Discard model (best dev acc :: {best_dev_acc :.3f})", args)
+            n_discarded += 1
+            if n_discarded >= args.early_stop:
+                log(f"Early stopping after {n_discarded} discarded models", args)
+                break
 
 
     log("Finish training at time: " + str(datetime.now()), args)
@@ -438,6 +451,7 @@ def train_multitask(args):
     lr = args.lr
     optimizer: AdamW | PCGrad = AdamW(model.parameters(), lr=lr, weight_decay=args.decay)
     best_dev_acc = 0
+    n_discarded = 0
 
     num_samples = min(len(sst_train_data), len(para_train_data), len(sts_train_data))
 
@@ -509,8 +523,13 @@ def train_multitask(args):
             log(f"New best dev acc :: {dev_acc :.3f} (prev: {best_dev_acc :.3f})", args)
             best_dev_acc = dev_acc
             save_model(model, optimizer, args, config, args.filepath)
+            n_discarded = 0
         else:
             log(f"Discard model (best dev acc :: {best_dev_acc :.3f})", args)
+            n_discarded += 1
+            if n_discarded >= args.early_stop:
+                log(f"Early stopping after {n_discarded} discarded models", args)
+                break
 
 
     log("Finish training at time: " + str(datetime.now()), args)
@@ -648,6 +667,7 @@ def get_args():
     parser.add_argument("--task", type=str, help='sst for sentiment analysis, para for paraphrase detection, sts for semantic textual similarity and multi for multitask training all of them at once (by dafult, multitask training)', choices=('sst', 'para', 'sts', 'multi'), default='multi')
     parser.add_argument("--load", type=str, help='Load model from file')
     parser.add_argument("--decay", type=float, help='Weight decay', default=0.01)
+    parser.add_argument("--early_stop", type=int, help='After this many models have been discarded, we stop', default=2)
 
     args = parser.parse_args()
     return args

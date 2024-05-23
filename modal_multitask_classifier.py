@@ -56,6 +56,7 @@ class Params:
         self.task = params.get("task")
         self.load = params.get("load")
         self.decay = params.get("decay")
+        self.early_stop = params.get("early_stop")
 
 params = {
     "sst_train": f"{REMOTE_DATA_DIR}/ids-sst-train.csv",
@@ -68,8 +69,8 @@ params = {
     "sts_dev": f"{REMOTE_DATA_DIR}/sts-dev.csv",
     "sts_test": f"{REMOTE_DATA_DIR}/sts-test-student.csv",
     "seed": 11711,
-    "epochs": 10,
-    "fine_tune_mode": "full-model",
+    "epochs": 50,
+    "fine_tune_mode": "last-linear-layer",
     "sst_dev_out": f"{REMOTE_PREDICTIONS_DIR}/sst-dev-output.csv",
     "sst_test_out": f"{REMOTE_PREDICTIONS_DIR}/sst-test-output.csv",
     "para_dev_out": f"{REMOTE_PREDICTIONS_DIR}/para-dev-output.csv",
@@ -77,18 +78,18 @@ params = {
     "sts_dev_out": f"{REMOTE_PREDICTIONS_DIR}/sts-dev-output.csv",
     "sts_test_out": f"{REMOTE_PREDICTIONS_DIR}/sts-test-output.csv",
     "batch_size": 8,
-    "hidden_dropout_prob": 0.3,
-    "last_dropout_prob": 0.4,
-    "lr": 5e-5,
+    "hidden_dropout_prob": 0.5,
+    "last_dropout_prob": 0.6,
+    "lr": 2e-5,
     "pcgrad": False,
     "dora": False,
     "l1l2": False,
     "eval": False,
     "parallel": False,
-    "task": "multi",
+    "task": "sts",
     "load": None,
-    "decay": 0,
-    # "decay": 0.01
+    "early_stop": 50,
+    "decay": 0.01
 }
 
 image = (
