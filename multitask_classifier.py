@@ -538,7 +538,7 @@ def train_multitask(args):
 def test_multitask(args):
     '''Test and save predictions on the dev and test sets of all three tasks.'''
     with torch.no_grad():
-        saved = torch.load(args.filepath, device=DEVICE)
+        saved = torch.load(args.filepath)
         config = saved['model_config']
 
         model = MultitaskBERT(config)
