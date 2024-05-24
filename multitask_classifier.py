@@ -84,16 +84,22 @@ class MultitaskBERT(nn.Module):
                 param.requires_grad = True
         # You will want to add layers here to perform the downstream tasks.
 
-        self.sentiment_linear = nn.Linear(config.hidden_size, 5)
+        # Sentiment classification layers
+        self.sentiment_fc1 = nn.Linear(config.hidden_size, config.hidden_size // 2)
+        self.sentiment_fc2 = nn.Linear(config.hidden_size // 2, 5)
+        self.sentiment_activation = nn.ReLU()
         self.sentiment_dropout = nn.Dropout(config.last_dropout_prob)
 
-        self.paraphrase_linear = nn.Linear(2 * config.hidden_size, 1)
+        # Paraphrase detection layers
+        self.paraphrase_fc1 = nn.Linear(2 * config.hidden_size, config.hidden_size)
+        self.paraphrase_fc2 = nn.Linear(config.hidden_size, 1)
+        self.paraphrase_activation = nn.ReLU()
         self.paraphrase_dropout = nn.Dropout(config.last_dropout_prob)
 
-        self.similarity_ff1 = nn.Linear(2 * config.hidden_size, 2 * config.hidden_size)
-        self.similarity_ff1_dropout = nn.Dropout(config.last_dropout_prob)
-
-        self.similarity_linear = nn.Linear(2 * config.hidden_size, 1)
+        # Semantic textual similarity layers
+        self.similarity_fc1 = nn.Linear(2 * config.hidden_size, config.hidden_size)
+        self.similarity_fc2 = nn.Linear(config.hidden_size, 1)
+        self.similarity_activation = nn.ReLU()
         self.similarity_dropout = nn.Dropout(config.last_dropout_prob)
 
 
@@ -116,8 +122,11 @@ class MultitaskBERT(nn.Module):
         '''
 
         embeddings = self.forward(input_ids, attention_mask)
-        dropped = self.sentiment_dropout(embeddings)
-        logits = self.sentiment_linear(dropped)
+        x = self.sentiment_dropout(embeddings)
+        x = self.sentiment_fc1(x)
+        x = self.sentiment_activation(x)
+        x = self.sentiment_dropout(x)
+        logits = self.sentiment_fc2(x)
 
         return  logits
 
@@ -131,12 +140,12 @@ class MultitaskBERT(nn.Module):
 
         embeddings_1 = self.forward(input_ids_1, attention_mask_1)
         embeddings_2 = self.forward(input_ids_2, attention_mask_2)
-
-
         combined_embeddings = torch.cat((embeddings_1, embeddings_2), 1)
-        dropped = self.paraphrase_dropout(combined_embeddings)
-
-        logit = self.paraphrase_linear(dropped)
+        x = self.paraphrase_dropout(combined_embeddings)
+        x = self.paraphrase_fc1(x)
+        x = self.paraphrase_activation(x)
+        x = self.paraphrase_dropout(x)
+        logit = self.paraphrase_fc2(x)
 
         return  logit
 
@@ -150,15 +159,12 @@ class MultitaskBERT(nn.Module):
 
         embeddings_1 = self.forward(input_ids_1, attention_mask_1)
         embeddings_2 = self.forward(input_ids_2, attention_mask_2)
-
         combined_embeddings = torch.cat((embeddings_1, embeddings_2), 1)
-        dropped = self.similarity_dropout(combined_embeddings)
-
-        ff1 = self.similarity_ff1(dropped)
-        ff1_relu = F.relu(ff1)
-        ff1_dropped = self.similarity_ff1_dropout(ff1_relu)
-
-        logit = self.similarity_linear(ff1_dropped)
+        x = self.similarity_dropout(combined_embeddings)
+        x = self.similarity_fc1(x)
+        x = self.similarity_activation(x)
+        x = self.similarity_dropout(x)
+        logit = self.similarity_fc2(x)
 
         return  logit
     
