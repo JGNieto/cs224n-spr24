@@ -91,15 +91,17 @@ class MultitaskBERT(nn.Module):
         self.sentiment_dropout = nn.Dropout(config.last_dropout_prob)
 
         # Paraphrase detection layers
-        self.paraphrase_fc1 = nn.Linear(2 * config.hidden_size, config.hidden_size)
-        self.paraphrase_fc2 = nn.Linear(config.hidden_size, 1)
-        self.paraphrase_activation = nn.ReLU()
+        # self.paraphrase_fc1 = nn.Linear(2 * config.hidden_size, config.hidden_size)
+        # self.paraphrase_fc2 = nn.Linear(config.hidden_size, 1)
+        # self.paraphrase_activation = nn.ReLU()
+        self.paraphrase_linear = nn.Linear(config.hidden_size, 1)
         self.paraphrase_dropout = nn.Dropout(config.last_dropout_prob)
 
         # Semantic textual similarity layers
-        self.similarity_fc1 = nn.Linear(2 * config.hidden_size, config.hidden_size)
-        self.similarity_fc2 = nn.Linear(config.hidden_size, 1)
-        self.similarity_activation = nn.ReLU()
+        # self.similarity_fc1 = nn.Linear(2 * config.hidden_size, config.hidden_size)
+        # self.similarity_fc2 = nn.Linear(config.hidden_size, 1)
+        # self.similarity_activation = nn.ReLU()
+        self.similarity_linear = nn.Linear(config.hidden_size, 1)
         self.similarity_dropout = nn.Dropout(config.last_dropout_prob)
 
 
@@ -128,7 +130,7 @@ class MultitaskBERT(nn.Module):
         x = self.sentiment_dropout(x)
         logits = self.sentiment_fc2(x)
 
-        return  logits
+        return logits
 
     def predict_paraphrase(self,
                            input_ids_1, attention_mask_1,
@@ -139,15 +141,18 @@ class MultitaskBERT(nn.Module):
         '''
 
         embeddings_1 = self.forward(input_ids_1, attention_mask_1)
-        embeddings_2 = self.forward(input_ids_2, attention_mask_2)
-        combined_embeddings = torch.cat((embeddings_1, embeddings_2), 1)
-        x = self.paraphrase_dropout(combined_embeddings)
-        x = self.paraphrase_fc1(x)
-        x = self.paraphrase_activation(x)
-        x = self.paraphrase_dropout(x)
-        logit = self.paraphrase_fc2(x)
+        # embeddings_2 = self.forward(input_ids_2, attention_mask_2)
+        # combined_embeddings = torch.cat((embeddings_1, embeddings_2), 1)
+        # x = self.paraphrase_dropout(combined_embeddings)
+        # x = self.paraphrase_fc1(x)
+        # x = self.paraphrase_activation(x)
+        # x = self.paraphrase_dropout(x)
+        # logit = self.paraphrase_fc2(x)
 
-        return  logit
+        x = self.paraphrase_dropout(embeddings_1)
+        logit = self.paraphrase_linear(x)
+
+        return logit
 
 
     def predict_similarity(self,
@@ -158,15 +163,18 @@ class MultitaskBERT(nn.Module):
         '''
 
         embeddings_1 = self.forward(input_ids_1, attention_mask_1)
-        embeddings_2 = self.forward(input_ids_2, attention_mask_2)
-        combined_embeddings = torch.cat((embeddings_1, embeddings_2), 1)
-        x = self.similarity_dropout(combined_embeddings)
-        x = self.similarity_fc1(x)
-        x = self.similarity_activation(x)
-        x = self.similarity_dropout(x)
-        logit = self.similarity_fc2(x)
+        # embeddings_2 = self.forward(input_ids_2, attention_mask_2)
+        # combined_embeddings = torch.cat((embeddings_1, embeddings_2), 1)
+        # x = self.similarity_dropout(combined_embeddings)
+        # x = self.similarity_fc1(x)
+        # x = self.similarity_activation(x)
+        # x = self.similarity_dropout(x)
+        # logit = self.similarity_fc2(x)
 
-        return  logit
+        x = self.similarity_dropout(embeddings_1)
+        logit = self.similarity_linear(x)
+
+        return logit
     
     def compute_l1_loss(self, w):
         return torch.abs(w).sum()
@@ -673,35 +681,45 @@ def get_args():
     parser.add_argument("--task", type=str, help='sst for sentiment analysis, para for paraphrase detection, sts for semantic textual similarity and multi for multitask training all of them at once (by dafult, multitask training)', choices=('sst', 'para', 'sts', 'multi'), default='multi')
     parser.add_argument("--load", type=str, help='Load model from file')
     parser.add_argument("--decay", type=float, help='Weight decay', default=0.01)
-    parser.add_argument("--early_stop", type=int, help='After this many models have been discarded, we stop', default=2)
+    parser.add_argument("--early_stop", type=int, help='After this many models have been discarded, we stop. Default is no stop.', default=-1)
+    parser.add_argument("--nickname", type=str, help='Nickname for the model', default='')
+    parser.add_argument("--output", type=str, help='Output directory for model and logs', default='.')
 
     args = parser.parse_args()
     return args
 
 def run(args):
-    if not os.path.exists("./output"):
-        os.makedirs("./output")
+    for x in [args.sst_dev_out, args.sst_test_out, args.para_dev_out, args.para_test_out, args.sts_dev_out, args.sts_test_out]:
+        os.makedirs(os.path.dirname(x), exist_ok=True)
+
+    args.output = os.path.dirname(args.output) 
+    os.makedirs(args.output, exist_ok=True)
+
+    print("Nickname:", args.nickname)
+
+    if args.early_stop == -1:
+        args.early_stop = args.epochs + 1
 
     if args.eval:
-        path = datetime.now().strftime('%Y-%m-%d-%H-%M')
+        path = datetime.now().strftime('%Y-%m-%d-%H-%M') + ('' if args.nickname == '' else f"-{args.nickname}")
         if not args.load:
             print("You must specify a .pt file using --load to load the model from.")
             exit(1)
         args.filepath = args.load
-        args.stats = f'./output/test-{path}-stats.txt' # Stats path.
+        args.stats = os.path.join(args.output, f'test-{path}-stats.txt') # Stats path.
         test_multitask(args)
     else:
-        path = datetime.now().strftime('%Y-%m-%d-%H-%M') + f"-{args.fine_tune_mode}-{args.epochs}-{args.lr}-{'pcgrad' if args.pcgrad else 'adamw'}-{'dora' if args.dora else 'swiper'}-{'l1l2' if args.l1l2 else 'regloss'}"
+        path = datetime.now().strftime('%Y-%m-%d-%H-%M') + ('' if args.nickname == '' else f"-{args.nickname}") + f"-{args.fine_tune_mode}-{args.epochs}-{args.lr}-{'pcgrad' if args.pcgrad else 'adamw'}-{'dora' if args.dora else 'swiper'}-{'l1l2' if args.l1l2 else 'regloss'}"
 
         seed_everything(args.seed)  # Fix the seed for reproducibility.
 
         if args.task == 'multi':
-            args.filepath = f'./output/{path}-multitask.pt' # Save path.
-            args.stats = f'./output/{path}-multitask-stats.txt' # Stats path.
+            args.filepath = os.path.join(args.output, f'{path}-multitask.pt') # Save path.
+            args.stats = os.path.join(args.output, f'{path}-multitask-stats.txt') # Stats path.
             train_multitask(args)
         else:
-            args.filepath = f'./output/{path}-{args.task}.pt' # Save path.
-            args.stats = f'./output/{path}-{args.task}-stats.txt' # Stats path.
+            args.filepath = os.path.join(args.output, f'{path}-{args.task}.pt') # Save path.
+            args.stats = os.path.join(args.output, f'{path}-{args.task}-stats.txt') # Stats path.
             train_single_task(args)
 
         test_multitask(args)

@@ -118,7 +118,10 @@ class SentencePairDataset(Dataset):
         labels = [x[2] for x in data]
         sent_ids = [x[3] for x in data]
 
-        encoding1 = self.tokenizer(sent1, return_tensors='pt', padding=True, truncation=True)
+        # JAVIER MODIFIED THIS LINE
+        # encoding1 = self.tokenizer(sent1, return_tensors='pt', padding=True, truncation=True)
+        encoding1 = self.tokenizer(sent1, sent2, return_tensors='pt', padding=True, truncation=True)
+
         encoding2 = self.tokenizer(sent2, return_tensors='pt', padding=True, truncation=True)
 
         token_ids = torch.LongTensor(encoding1['input_ids'])

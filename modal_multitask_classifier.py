@@ -2,13 +2,27 @@ import modal
 from modal import Image
 import os
 import multitask_classifier
+import random
+import string
 
 current_directory = os.path.dirname(os.path.abspath(__file__))
 
+EXPERIMENT_NAME = None
+
+if not EXPERIMENT_NAME:
+    EXPERIMENT_NAME = ''.join(random.choices(string.ascii_lowercase, k=6))
+
+print(f"Experiment name: {EXPERIMENT_NAME}")
+
 LOCAL_DATA_DIR = os.path.join(current_directory, 'data')
 REMOTE_DATA_DIR = "/root/jbelle/data"
-REMOTE_PREDICTIONS_DIR = "/root/jbelle/predictions"
-GPU = "T4"
+VOLUME_NAME = "jbelle-data"
+VOLUME_PATH = "/vol/jbelle"
+REMOTE_PREDICTIONS_DIR = f"{VOLUME_PATH}/{EXPERIMENT_NAME}/predictions"
+REMOTE_OUTPUT_DIR = f"{VOLUME_PATH}/{EXPERIMENT_NAME}/output"
+GPU = "A10G"
+
+volume = modal.Volume.from_name(VOLUME_NAME)
 
 packages = [
     "torch",
@@ -57,6 +71,8 @@ class Params:
         self.load = params.get("load")
         self.decay = params.get("decay")
         self.early_stop = params.get("early_stop")
+        self.nickname = params.get("nickname")
+        self.output = params.get("output")
 
 params = {
     "sst_train": f"{REMOTE_DATA_DIR}/ids-sst-train.csv",
@@ -69,8 +85,8 @@ params = {
     "sts_dev": f"{REMOTE_DATA_DIR}/sts-dev.csv",
     "sts_test": f"{REMOTE_DATA_DIR}/sts-test-student.csv",
     "seed": 11711,
-    "epochs": 50,
-    "fine_tune_mode": "last-linear-layer",
+    "epochs": 10,
+    "fine_tune_mode": "full-model",
     "sst_dev_out": f"{REMOTE_PREDICTIONS_DIR}/sst-dev-output.csv",
     "sst_test_out": f"{REMOTE_PREDICTIONS_DIR}/sst-test-output.csv",
     "para_dev_out": f"{REMOTE_PREDICTIONS_DIR}/para-dev-output.csv",
@@ -86,10 +102,12 @@ params = {
     "l1l2": False,
     "eval": False,
     "parallel": False,
-    "task": "sts",
+    "task": "multi",
     "load": None,
-    "early_stop": 50,
-    "decay": 0.01
+    "early_stop": -1,
+    "decay": 0.01,
+    "nickname": "",
+    "output": REMOTE_OUTPUT_DIR,
 }
 
 image = (
@@ -102,9 +120,13 @@ app = modal.App()
 @app.function(image=image,
               mounts=[modal.Mount.from_local_dir(LOCAL_DATA_DIR, remote_path=REMOTE_DATA_DIR)],
               gpu=GPU,
-              timeout=60*60*3 # 3 hours
+              timeout=60*60*3, # 3 hours
+              volumes={VOLUME_PATH: volume},
               )
 def run_multitask():
     params_obj = Params(params)
+    params_obj.nickname = EXPERIMENT_NAME
     multitask_classifier.run(params_obj)
+    print("Finished running multitask_classifier. Writing to modal...")
+    volume.commit()
 
