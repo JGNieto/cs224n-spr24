@@ -353,15 +353,9 @@ def train_single_task(args):
     n_discarded = 0
 
     log("Start training at time: " + str(datetime.now()), args)
-    log(f"Fine-tune mode: {args.fine_tune_mode}", args)
-    log(f"Learning rate: {lr}", args)
-    log(f"Device: {DEVICE}", args)
-    log(f"Task: {args.task}", args)
-    log(f"Early stop: {args.early_stop}", args)
-    log(f"Hidden droput", args.hidden_dropout_prob)
-    log(f"Last dropout", args.last_dropout_prob)
-    log(f"Decay: {args.decay}", args)
     log("Using AdamW", args)
+
+    last_good_epoch = 0
 
     # Run for the specified number of epochs.
     for epoch in range(args.epochs):
@@ -397,6 +391,7 @@ def train_single_task(args):
             best_dev_acc = dev_acc
             save_model(model, optimizer, args, config, args.filepath)
             n_discarded = 0
+            last_good_epoch = epoch
         else:
             log(f"Discard model (best dev acc :: {best_dev_acc :.3f})", args)
             n_discarded += 1
@@ -405,6 +400,7 @@ def train_single_task(args):
                 break
 
 
+    log("Last good epoch: " + str(last_good_epoch), args)
     log("Finish training at time: " + str(datetime.now()), args)
 
 
@@ -476,19 +472,14 @@ def train_multitask(args):
 
     log(f"Number of samples: {num_samples}", args)
     log("Start training at time: " + str(datetime.now()), args)
-    log(f"Fine-tune mode: {args.fine_tune_mode}", args)
-    log(f"Learning rate: {lr}", args)
-    log(f"Early stop: {args.early_stop}", args)
-    log(f"Hidden droput", args.hidden_dropout_prob)
-    log(f"Last dropout", args.last_dropout_prob)
-    log(f"Decay: {args.decay}", args)
-    log(f"Device: {DEVICE}", args)
 
     if args.pcgrad:
         log("Using PCGrad", args)
         optimizer = PCGrad(optimizer)
     else:
         log("Using AdamW", args)
+
+    last_good_epoch = 0
 
     # Run for the specified number of epochs.
     for epoch in range(args.epochs):
@@ -547,6 +538,7 @@ def train_multitask(args):
             best_dev_acc = dev_acc
             save_model(model, optimizer, args, config, args.filepath)
             n_discarded = 0
+            last_good_epoch = epoch
         else:
             log(f"Discard model (best dev acc :: {best_dev_acc :.3f})", args)
             n_discarded += 1
@@ -555,6 +547,7 @@ def train_multitask(args):
                 break
 
 
+    log("Last good epoch: " + str(last_good_epoch), args)
     log("Finish training at time: " + str(datetime.now()), args)
 
 
@@ -697,6 +690,16 @@ def get_args():
     args = parser.parse_args()
     return args
 
+def common_logs(args):
+    log(f"Fine-tune mode: {args.fine_tune_mode}", args)
+    log(f"Learning rate: {args.lr}", args)
+    log(f"Device: {DEVICE}", args)
+    log(f"Task: {args.task}", args)
+    log(f"Early stop: {args.early_stop}", args)
+    log(f"Hidden droput: {args.hidden_dropout_prob}", args)
+    log(f"Last dropout: {args.last_dropout_prob}", args)
+    log(f"Decay: {args.decay}", args)
+
 def run(args):
     for x in [args.sst_dev_out, args.sst_test_out, args.para_dev_out, args.para_test_out, args.sts_dev_out, args.sts_test_out]:
         os.makedirs(os.path.dirname(x), exist_ok=True)
@@ -725,10 +728,12 @@ def run(args):
         if args.task == 'multi':
             args.filepath = os.path.join(args.output, f'{path}-multitask.pt') # Save path.
             args.stats = os.path.join(args.output, f'{path}-multitask-stats.txt') # Stats path.
+            common_logs(args)
             train_multitask(args)
         else:
             args.filepath = os.path.join(args.output, f'{path}-{args.task}.pt') # Save path.
             args.stats = os.path.join(args.output, f'{path}-{args.task}-stats.txt') # Stats path.
+            common_logs(args)
             train_single_task(args)
 
         test_multitask(args)
