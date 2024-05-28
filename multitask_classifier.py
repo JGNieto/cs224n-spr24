@@ -356,6 +356,10 @@ def train_single_task(args):
     log(f"Fine-tune mode: {args.fine_tune_mode}", args)
     log(f"Learning rate: {lr}", args)
     log(f"Device: {DEVICE}", args)
+    log(f"Task: {args.task}", args)
+    log(f"Early stop: {args.early_stop}", args)
+    log(f"Hidden droput", args.hidden_dropout_prob)
+    log(f"Last dropout", args.last_dropout_prob)
     log("Using AdamW", args)
 
     # Run for the specified number of epochs.
@@ -473,6 +477,9 @@ def train_multitask(args):
     log("Start training at time: " + str(datetime.now()), args)
     log(f"Fine-tune mode: {args.fine_tune_mode}", args)
     log(f"Learning rate: {lr}", args)
+    log(f"Early stop: {args.early_stop}", args)
+    log(f"Hidden droput", args.hidden_dropout_prob)
+    log(f"Last dropout", args.last_dropout_prob)
     log(f"Device: {DEVICE}", args)
 
     if args.pcgrad:
