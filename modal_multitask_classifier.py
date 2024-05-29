@@ -9,10 +9,12 @@ current_directory = os.path.dirname(os.path.abspath(__file__))
 
 EXPERIMENT_NAME = None
 
+# NOTE: It is possible that this file is run multiple times by Modal for a single
+# experiment, and EXPERIMENT_NAME will change between runs. Therefore, we CANNOT
+# use the value of EXPERIMENT_NAME in this file, only the definitive value in
+# multitask_classifier.py. (TL;DR, don't print EXPERIMENT_NAME in this file)
 if not EXPERIMENT_NAME:
     EXPERIMENT_NAME = ''.join(random.choices(string.ascii_lowercase, k=6))
-
-print(f"Experiment name: {EXPERIMENT_NAME}")
 
 LOCAL_DATA_DIR = os.path.join(current_directory, 'data')
 REMOTE_DATA_DIR = "/root/jbelle/data"
@@ -64,6 +66,7 @@ class Params:
         self.lr = params.get("lr")
         self.pcgrad = params.get("pcgrad")
         self.dora = params.get("dora")
+        self.lora = params.get("lora")
         self.l1l2 = params.get("l1l2")
         self.eval = params.get("eval")
         self.parallel = params.get("parallel")
@@ -85,8 +88,8 @@ params = {
     "sts_dev": f"{REMOTE_DATA_DIR}/sts-dev.csv",
     "sts_test": f"{REMOTE_DATA_DIR}/sts-test-student.csv",
     "seed": 11711,
-    "epochs": 10,
-    "fine_tune_mode": "full-model",
+    "epochs": 100,
+    "fine_tune_mode": "last-linear-layer",
     "sst_dev_out": f"{REMOTE_PREDICTIONS_DIR}/sst-dev-output.csv",
     "sst_test_out": f"{REMOTE_PREDICTIONS_DIR}/sst-test-output.csv",
     "para_dev_out": f"{REMOTE_PREDICTIONS_DIR}/para-dev-output.csv",
@@ -97,14 +100,17 @@ params = {
     "hidden_dropout_prob": 0.1,
     "last_dropout_prob": 0.5,
     "lr": 2e-5,
-    "pcgrad": True,
+    "pcgrad": False,
     "dora": False,
+    "lora": False,
     "l1l2": False,
     "eval": False,
     "parallel": False,
+    # "task": "sst",
+    # "load": f"{VOLUME_PATH}/xvfcqo/2024-05-28-18-14-xvfcqo-full-model-10-2e-05-adamw-swiper-regloss-multitask.pt",
     "task": "multi",
     "load": None,
-    "early_stop": -1,
+    "early_stop": 10,
     "decay": 0.01,
     "nickname": "",
     "output": REMOTE_OUTPUT_DIR,
@@ -126,7 +132,13 @@ app = modal.App()
 def run_multitask():
     params_obj = Params(params)
     params_obj.nickname = EXPERIMENT_NAME
-    multitask_classifier.run(params_obj)
+    try:
+        multitask_classifier.run(params_obj)
+    except Exception as e:
+        print(f"Error: {e}")
+        print("Saving volume...")
+        volume.commit()
+        raise
     print("Finished running multitask_classifier. Writing to modal...")
     volume.commit()
 

@@ -40,6 +40,7 @@ from dora import replace_linear_with_dora
 
 from datetime import datetime
 
+import gc
 import os
 
 TQDM_DISABLE=False
@@ -336,7 +337,9 @@ def train_single_task(args):
         model = model.to(DEVICE)
 
     if args.load:
-        saved = torch.load(args.load, device=DEVICE)
+        saved = torch.load(args.load)
+        if args.dora:
+            replace_linear_with_dora(model, DEVICE)
         model.load_state_dict(saved['model'])
         config = saved['model_config']
         log(f"Loaded model from {args.load}", args)
@@ -360,6 +363,11 @@ def train_single_task(args):
     # Run for the specified number of epochs.
     for epoch in range(args.epochs):
         print()
+        print("Collecting garbage...")
+        gc.collect()
+        if DEVICE.type == 'cuda':
+            print("Emptying CUDA cache...")
+            torch.cuda.empty_cache()
 
         model.train()
         train_loss = 0
@@ -453,6 +461,8 @@ def train_multitask(args):
 
     if args.load:
         saved = torch.load(args.load, device=DEVICE)
+        if args.dora:
+            replace_linear_with_dora(model, DEVICE)
         model.load_state_dict(saved['model'])
         config = saved['model_config']
         log(f"Loaded model from {args.load}", args)
@@ -483,7 +493,11 @@ def train_multitask(args):
 
     # Run for the specified number of epochs.
     for epoch in range(args.epochs):
-        print()
+        print("Collecting garbage...")
+        gc.collect()
+        if DEVICE.type == 'cuda':
+            print("Emptying CUDA cache...")
+            torch.cuda.empty_cache()
 
         model.train()
         train_loss = 0
@@ -491,12 +505,23 @@ def train_multitask(args):
 
         for sst_batch, para_batch, sts_batch in tqdm(zip(sst_train_dataloader, para_train_dataloader, sts_train_dataloader), desc=f'train-{epoch}', disable=TQDM_DISABLE):
             sentiment_loss = sentiment_batch(model, sst_batch)
+            # optimizer.zero_grad()
+            # sentiment_loss.backward()
+            # optimizer.step()
+
             paraphrase_loss = paraphrase_batch(model, para_batch)
+            # optimizer.zero_grad()
+            # paraphrase_loss.backward()
+            # optimizer.step()
+
             semantic_loss = semantic_batch(model, sts_batch)
+            # optimizer.zero_grad()
+            # optimizer.step()
+            # semantic_loss.backward()
 
             losses = [sentiment_loss, paraphrase_loss, semantic_loss]
             loss: torch.Tensor = sum(losses) # type: ignore
-            
+
             if args.l1l2:
                 # Specify L1 and L2 weights
                 l1_weight = 0.3
@@ -562,6 +587,8 @@ def test_multitask(args):
             model = torch.nn.DataParallel(model)
         else:
             model = model.to(DEVICE)
+        if args.dora:
+            replace_linear_with_dora(model, DEVICE)
         model.load_state_dict(saved['model'])
         print(f"Loaded model to test from {args.filepath}")
 
@@ -677,6 +704,7 @@ def get_args():
 
     parser.add_argument("--pcgrad", action='store_true', help='Use PCGrad instead of plain AdamW (only for multitask training)')
     parser.add_argument("--dora", action='store_true', help='Use DoRA PEFT')
+    parser.add_argument("--lora", action='store_true', help='Use LoRA PEFT')
     parser.add_argument("--l1l2", action='store_true', help='Use L1 L2 Loss')
     parser.add_argument("--eval", action='store_true', help='Only evaluate the model, no training. Must use --load to specify .pt file')
     parser.add_argument("--parallel", action='store_true', help='Use parallel training')
@@ -698,14 +726,18 @@ def common_logs(args):
     log(f"Early stop: {args.early_stop}", args)
     log(f"Hidden droput: {args.hidden_dropout_prob}", args)
     log(f"Last dropout: {args.last_dropout_prob}", args)
+    log(f"L1L2: {args.l1l2}", args)
     log(f"Decay: {args.decay}", args)
 
 def run(args):
+    assert not (args.dora and args.lora), "Cannot use both DoRA and LoRA at the same time."
+
     for x in [args.sst_dev_out, args.sst_test_out, args.para_dev_out, args.para_test_out, args.sts_dev_out, args.sts_test_out]:
         os.makedirs(os.path.dirname(x), exist_ok=True)
 
     args.output = os.path.dirname(args.output) 
     os.makedirs(args.output, exist_ok=True)
+    os.makedirs(os.path.join(args.output, "logs"), exist_ok=True)
 
     print("Nickname:", args.nickname)
 
@@ -727,12 +759,12 @@ def run(args):
 
         if args.task == 'multi':
             args.filepath = os.path.join(args.output, f'{path}-multitask.pt') # Save path.
-            args.stats = os.path.join(args.output, f'{path}-multitask-stats.txt') # Stats path.
+            args.stats = os.path.join(args.output, "logs", f'{path}-multitask-stats.txt') # Stats path.
             common_logs(args)
             train_multitask(args)
         else:
             args.filepath = os.path.join(args.output, f'{path}-{args.task}.pt') # Save path.
-            args.stats = os.path.join(args.output, f'{path}-{args.task}-stats.txt') # Stats path.
+            args.stats = os.path.join(args.output, "logs", f'{path}-{args.task}-stats.txt') # Stats path.
             common_logs(args)
             train_single_task(args)
 
