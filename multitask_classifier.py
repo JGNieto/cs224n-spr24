@@ -60,8 +60,8 @@ def seed_everything(seed=11711):
 BERT_HIDDEN_SIZE = 768
 
 SENTIMENT_BATCH_SIZE = 8
-STS_BATCH_SIZE = 8
 PARAPHRASE_BATCH_SIZE = 8
+STS_BATCH_SIZE = 8
 
 DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
@@ -201,6 +201,17 @@ def save_model(model, optimizer, args, config, filepath):
     torch.save(save_info, filepath)
     print(f"save the model to {filepath}")
 
+def log(string, args):
+    with open(args.stats, "a+") as f:
+        f.write(string + "\n")
+        print(string)
+
+def compute_parameters(model, args):
+    total_params = sum(p.numel() for p in model.parameters())
+    log(f"Total parameters: {total_params}", args)
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    log(f"Trainable parameters: {trainable_params}", args)
+
 # Custom function
 def sentiment_batch(model: nn.Module, batch) -> torch.Tensor:
     b_ids, b_mask, b_labels = (batch['token_ids'],
@@ -255,11 +266,6 @@ def semantic_batch(model: nn.Module, batch) -> torch.Tensor:
     # loss = F.smooth_l1_loss(logit.view(-1), b_labels.float())
 
     return loss
-
-def log(string, args):
-    with open(args.stats, "a+") as f:
-        f.write(string + "\n")
-        print(string)
 
 def overall_score(sst_acc, para_acc, sts_corr):
     scores = []
@@ -355,8 +361,10 @@ def train_single_task(args):
     best_dev_acc = 0
     n_discarded = 0
 
-    log("Start training at time: " + str(datetime.now()), args)
     log("Using AdamW", args)
+    
+
+    log("Start training at time: " + str(datetime.now()), args)
 
     last_good_epoch = 0
 
@@ -480,14 +488,16 @@ def train_multitask(args):
 
     num_samples = min(len(sst_train_data), len(para_train_data), len(sts_train_data))
 
-    log(f"Number of samples: {num_samples}", args)
-    log("Start training at time: " + str(datetime.now()), args)
+    compute_parameters(model, args)
 
+    log(f"Number of samples: {num_samples}", args)
     if args.pcgrad:
         log("Using PCGrad", args)
         optimizer = PCGrad(optimizer)
     else:
         log("Using AdamW", args)
+
+    log("Start training at time: " + str(datetime.now()), args)
 
     last_good_epoch = 0
 
