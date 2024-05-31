@@ -37,6 +37,8 @@ from evaluation import model_eval_sst, model_eval_multitask, model_eval_test_mul
 
 from pcgrad import PCGrad
 from dora import replace_linear_with_dora
+from lora import replace_linear_with_lora
+import loralib as lora
 
 from datetime import datetime
 
@@ -198,6 +200,8 @@ def save_model(model, optimizer, args, config, filepath):
         'torch_rng': torch.random.get_rng_state(),
     }
 
+    if args.lora:
+        save_info['model'] = lora.lora_state_dict(model)
     torch.save(save_info, filepath)
     print(f"save the model to {filepath}")
 
@@ -346,6 +350,8 @@ def train_single_task(args):
         saved = torch.load(args.load)
         if args.dora:
             replace_linear_with_dora(model, DEVICE)
+        if args.lora:
+            replace_linear_with_lora(model, DEVICE)
         model.load_state_dict(saved['model'])
         config = saved['model_config']
         log(f"Loaded model from {args.load}", args)
@@ -353,8 +359,11 @@ def train_single_task(args):
         if args.dora:
             log("Using DoRA", args)
             replace_linear_with_dora(model, DEVICE)
+        if args.lora:
+            log("Using LoRA", args)
+            replace_linear_with_lora(model, DEVICE)
         else:
-            log("Not using DoRA", args)
+            log("Not using DoRA or LoRA", args)
 
     lr = args.lr
     optimizer: AdamW = AdamW(model.parameters(), lr=lr, weight_decay=args.decay)
@@ -471,6 +480,8 @@ def train_multitask(args):
         saved = torch.load(args.load, device=DEVICE)
         if args.dora:
             replace_linear_with_dora(model, DEVICE)
+        if args.lora:
+            replace_linear_with_lora(model, DEVICE)
         model.load_state_dict(saved['model'])
         config = saved['model_config']
         log(f"Loaded model from {args.load}", args)
@@ -478,8 +489,11 @@ def train_multitask(args):
         if args.dora:
             log("Using DoRA", args)
             replace_linear_with_dora(model, DEVICE)
+        if args.lora:
+            log("Using LoRA", args)
+            replace_linear_with_lora(model, DEVICE)
         else:
-            log("Not using DoRA", args)
+            log("Not using DoRA or LoRA", args)
 
     lr = args.lr
     optimizer: AdamW | PCGrad = AdamW(model.parameters(), lr=lr, weight_decay=args.decay)
@@ -599,6 +613,8 @@ def test_multitask(args):
             model = model.to(DEVICE)
         if args.dora:
             replace_linear_with_dora(model, DEVICE)
+        if args.lora:
+            replace_linear_with_lora(model, DEVICE)
         model.load_state_dict(saved['model'])
         print(f"Loaded model to test from {args.filepath}")
 
