@@ -86,10 +86,11 @@ class MultitaskBERT(nn.Module):
         # You will want to add layers here to perform the downstream tasks.
 
         # Sentiment classification layers
-        self.sentiment_fc1 = nn.Linear(config.hidden_size, config.hidden_size // 2)
-        self.sentiment_fc2 = nn.Linear(config.hidden_size // 2, 5)
-        self.sentiment_activation = nn.ReLU()
+        # self.sentiment_fc1 = nn.Linear(config.hidden_size, config.hidden_size // 2)
+        # self.sentiment_fc2 = nn.Linear(config.hidden_size // 2, 5)
+        # self.sentiment_activation = nn.ReLU()
         self.sentiment_dropout = nn.Dropout(config.last_dropout_prob)
+        self.sentiment_linear = nn.Linear(config.hidden_size, 5)
 
         # Paraphrase detection layers
         # self.paraphrase_fc1 = nn.Linear(2 * config.hidden_size, config.hidden_size)
@@ -125,11 +126,14 @@ class MultitaskBERT(nn.Module):
         '''
 
         embeddings = self.forward(input_ids, attention_mask)
+        # x = self.sentiment_dropout(embeddings)
+        # x = self.sentiment_fc1(x)
+        # x = self.sentiment_activation(x)
+        # x = self.sentiment_dropout(x)
+        # logits = self.sentiment_fc2(x)
+
         x = self.sentiment_dropout(embeddings)
-        x = self.sentiment_fc1(x)
-        x = self.sentiment_activation(x)
-        x = self.sentiment_dropout(x)
-        logits = self.sentiment_fc2(x)
+        logits = self.sentiment_linear(x)
 
         return logits
 
