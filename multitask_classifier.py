@@ -38,9 +38,9 @@ from evaluation import model_eval_sst, model_eval_multitask, model_eval_test_mul
 from pcgrad import PCGrad
 from dora import replace_linear_with_dora
 from lora import replace_linear_with_lora
-import loralib as lora
 
 from datetime import datetime
+import time
 
 import gc
 import os
@@ -204,8 +204,8 @@ def save_model(model, optimizer, args, config, filepath):
         'torch_rng': torch.random.get_rng_state(),
     }
 
-    if args.lora:
-        save_info['model'] = lora.lora_state_dict(model)
+    # if args.lora:
+    #     save_info['model'] = lora.lora_state_dict(model)
     torch.save(save_info, filepath)
     print(f"save the model to {filepath}")
 
@@ -354,7 +354,7 @@ def train_single_task(args):
         saved = torch.load(args.load)
         if args.dora:
             replace_linear_with_dora(model, DEVICE)
-        if args.lora:
+        elif args.lora:
             replace_linear_with_lora(model, DEVICE)
         model.load_state_dict(saved['model'])
         config = saved['model_config']
@@ -363,7 +363,7 @@ def train_single_task(args):
         if args.dora:
             log("Using DoRA", args)
             replace_linear_with_dora(model, DEVICE)
-        if args.lora:
+        elif args.lora:
             log("Using LoRA", args)
             replace_linear_with_lora(model, DEVICE)
         else:
@@ -380,6 +380,8 @@ def train_single_task(args):
     log("Start training at time: " + str(datetime.now()), args)
 
     last_good_epoch = 0
+    epoch_times = []
+    training_start = time.time()
 
     # Run for the specified number of epochs.
     for epoch in range(args.epochs):
@@ -394,6 +396,8 @@ def train_single_task(args):
         train_loss = 0
         num_batches = 0
 
+        start = time.time()
+
         for batch in tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
             loss = function(model, batch)
 
@@ -405,6 +409,10 @@ def train_single_task(args):
 
             train_loss += loss.item()
             num_batches += 1
+
+        elapsed = time.time() - start
+        epoch_times.append(elapsed)
+        log(f"Epoch {epoch} took {elapsed:.2f} seconds", args)
 
         train_loss = train_loss / num_batches
 
@@ -431,6 +439,8 @@ def train_single_task(args):
 
     log("Last good epoch: " + str(last_good_epoch), args)
     log("Finish training at time: " + str(datetime.now()), args)
+    log("Total training time: " + str(time.time() - training_start) + " seconds.", args)
+    log("Average epoch time: " + str(np.mean(epoch_times)) + " seconds.", args)
 
 
 def train_multitask(args):
@@ -484,7 +494,7 @@ def train_multitask(args):
         saved = torch.load(args.load, device=DEVICE)
         if args.dora:
             replace_linear_with_dora(model, DEVICE)
-        if args.lora:
+        elif args.lora:
             replace_linear_with_lora(model, DEVICE)
         model.load_state_dict(saved['model'])
         config = saved['model_config']
@@ -493,7 +503,7 @@ def train_multitask(args):
         if args.dora:
             log("Using DoRA", args)
             replace_linear_with_dora(model, DEVICE)
-        if args.lora:
+        elif args.lora:
             log("Using LoRA", args)
             replace_linear_with_lora(model, DEVICE)
         else:
@@ -518,6 +528,8 @@ def train_multitask(args):
     log("Start training at time: " + str(datetime.now()), args)
 
     last_good_epoch = 0
+    epoch_times = []
+    training_start = time.time()
 
     # Run for the specified number of epochs.
     for epoch in range(args.epochs):
@@ -530,6 +542,8 @@ def train_multitask(args):
         model.train()
         train_loss = 0
         num_batches = 0
+
+        start = time.time()
 
         for sst_batch, para_batch, sts_batch in tqdm(zip(sst_train_dataloader, para_train_dataloader, sts_train_dataloader), desc=f'train-{epoch}', disable=TQDM_DISABLE):
             sentiment_loss = sentiment_batch(model, sst_batch)
@@ -577,6 +591,10 @@ def train_multitask(args):
             train_loss += loss.item()
             num_batches += 1
 
+        elapsed = time.time() - start
+        epoch_times.append(elapsed)
+        log(f"Epoch {epoch} took {elapsed:.2f} seconds", args)
+
         train_loss = train_loss / num_batches
 
         # sst_train_acc, _, _, para_train_acc, _, _, sts_train_corr, *_  = model_eval_multitask(sst_train_dataloader, para_train_dataloader, sts_train_dataloader, model, DEVICE)
@@ -602,6 +620,8 @@ def train_multitask(args):
 
     log("Last good epoch: " + str(last_good_epoch), args)
     log("Finish training at time: " + str(datetime.now()), args)
+    log("Total training time: " + str(time.time() - training_start) + " seconds.", args)
+    log("Average epoch time: " + str(np.mean(epoch_times)) + " seconds.", args)
 
 
 def test_multitask(args):
@@ -617,7 +637,7 @@ def test_multitask(args):
             model = model.to(DEVICE)
         if args.dora:
             replace_linear_with_dora(model, DEVICE)
-        if args.lora:
+        elif args.lora:
             replace_linear_with_lora(model, DEVICE)
         model.load_state_dict(saved['model'])
         print(f"Loaded model to test from {args.filepath}")
@@ -760,7 +780,7 @@ def common_logs(args):
     log(f"Decay: {args.decay}", args)
 
 def run(args):
-    assert not (args.dora and args.lora), "Cannot use both DoRA and LoRA at the same time."
+    assert not (args.dora and args.lora), "Cannot use both DoRA and LoRA at the same time LOL."
 
     for x in [args.sst_dev_out, args.sst_test_out, args.para_dev_out, args.para_test_out, args.sts_dev_out, args.sts_test_out]:
         os.makedirs(os.path.dirname(x), exist_ok=True)
@@ -783,7 +803,7 @@ def run(args):
         args.stats = os.path.join(args.output, f'test-{path}-stats.txt') # Stats path.
         test_multitask(args)
     else:
-        path = datetime.now().strftime('%Y-%m-%d-%H-%M') + ('' if args.nickname == '' else f"-{args.nickname}") + f"-{args.fine_tune_mode}-{args.epochs}-{args.lr}-{'pcgrad' if args.pcgrad else 'adamw'}-{'dora' if args.dora else 'swiper'}-{'l1l2' if args.l1l2 else 'regloss'}"
+        path = datetime.now().strftime('%Y-%m-%d-%H-%M') + ('' if args.nickname == '' else f"-{args.nickname}") + f"-{args.fine_tune_mode}-{args.epochs}-{args.lr}-{'pcgrad' if args.pcgrad else 'adamw'}-{'dora' if args.dora else ('lora' if args.lora else 'swiper')}-{'l1l2' if args.l1l2 else 'regloss'}"
 
         seed_everything(args.seed)  # Fix the seed for reproducibility.
 
