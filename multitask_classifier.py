@@ -20,6 +20,8 @@ from torch import nn, optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, RandomSampler
 
+from itertools import islice
+
 from bert import BertModel
 from optimizer import AdamW
 from tqdm import tqdm
@@ -36,7 +38,7 @@ from datasets import (
 from evaluation import model_eval_sst, model_eval_multitask, model_eval_test_multitask
 
 from pcgrad import PCGrad
-from dora import replace_linear_with_dora
+from dora import replace_linear_with_dora, replace_linear_with_simple_lora
 from lora import replace_linear_with_lora
 
 from datetime import datetime
@@ -65,6 +67,8 @@ SENTIMENT_BATCH_SIZE = 8
 PARAPHRASE_BATCH_SIZE = 8
 STS_BATCH_SIZE = 8
 
+MAX_PER_ITER = 100
+
 DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
 class MultitaskBERT(nn.Module):
@@ -79,12 +83,8 @@ class MultitaskBERT(nn.Module):
         super(MultitaskBERT, self).__init__()
         self.bert = BertModel.from_pretrained('bert-base-uncased')
         # last-linear-layer mode does not require updating BERT paramters.
-        assert config.fine_tune_mode in ["last-linear-layer", "full-model"]
-        for param in self.bert.parameters():
-            if config.fine_tune_mode == 'last-linear-layer':
-                param.requires_grad = False
-            elif config.fine_tune_mode == 'full-model':
-                param.requires_grad = True
+        self.set_fine_tune_mode(config.fine_tune_mode)
+
         # You will want to add layers here to perform the downstream tasks.
 
         # Sentiment classification layers
@@ -108,6 +108,13 @@ class MultitaskBERT(nn.Module):
         self.similarity_linear = nn.Linear(config.hidden_size, 1)
         self.similarity_dropout = nn.Dropout(config.last_dropout_prob)
 
+    def set_fine_tune_mode(self, mode):
+        assert mode in ["last-linear-layer", "full-model"]
+        for param in self.bert.parameters():
+            if mode == 'last-linear-layer':
+                param.requires_grad = False
+            elif mode == 'full-model':
+                param.requires_grad = True
 
     def forward(self, input_ids, attention_mask):
         'Takes a batch of sentences and produces embeddings for them.'
@@ -355,7 +362,7 @@ def train_single_task(args):
         if args.dora:
             replace_linear_with_dora(model, DEVICE)
         elif args.lora:
-            replace_linear_with_lora(model, DEVICE)
+            replace_linear_with_simple_lora(model, DEVICE)
         model.load_state_dict(saved['model'])
         config = saved['model_config']
         log(f"Loaded model from {args.load}", args)
@@ -365,7 +372,7 @@ def train_single_task(args):
             replace_linear_with_dora(model, DEVICE)
         elif args.lora:
             log("Using LoRA", args)
-            replace_linear_with_lora(model, DEVICE)
+            replace_linear_with_simple_lora(model, DEVICE)
         else:
             log("Not using DoRA or LoRA", args)
 
@@ -421,6 +428,7 @@ def train_single_task(args):
 
         dev_acc = overall_score(sst_dev_acc, para_dev_acc, sts_dev_corr)
 
+        log(f"SST: {sst_dev_acc}, Para: {para_dev_acc}, STS: {sts_dev_corr}", args)
         log(f"Epoch {epoch}: train loss :: {train_loss :.3f}, dev acc :: {dev_acc :.3f}", args)
 
         if dev_acc > best_dev_acc:
@@ -442,6 +450,23 @@ def train_single_task(args):
     log("Total training time: " + str(time.time() - training_start) + " seconds.", args)
     log("Average epoch time: " + str(np.mean(epoch_times)) + " seconds.", args)
 
+def ratios(arr):
+    min_val = min(arr)
+    return (min(x // min_val, MAX_PER_ITER) for x in arr)
+
+def execute_batch(model: nn.Module, iter, function, n) -> torch.Tensor:
+    loss: torch.Tensor | None = None
+    for _ in range(n):
+        batch = next(iter)
+        dloss = function(model, batch)
+        if loss is None:
+            loss = dloss
+        else:
+            loss += dloss
+
+    assert loss is not None
+
+    return loss / n
 
 def train_multitask(args):
     '''Train MultitaskBERT.
@@ -495,7 +520,7 @@ def train_multitask(args):
         if args.dora:
             replace_linear_with_dora(model, DEVICE)
         elif args.lora:
-            replace_linear_with_lora(model, DEVICE)
+            replace_linear_with_simple_lora(model, DEVICE)
         model.load_state_dict(saved['model'])
         config = saved['model_config']
         log(f"Loaded model from {args.load}", args)
@@ -505,7 +530,7 @@ def train_multitask(args):
             replace_linear_with_dora(model, DEVICE)
         elif args.lora:
             log("Using LoRA", args)
-            replace_linear_with_lora(model, DEVICE)
+            replace_linear_with_simple_lora(model, DEVICE)
         else:
             log("Not using DoRA or LoRA", args)
 
@@ -514,11 +539,22 @@ def train_multitask(args):
     best_dev_acc = 0
     n_discarded = 0
 
-    num_samples = min(len(sst_train_data), len(para_train_data), len(sts_train_data))
+    sst_len = len(sst_train_data) // SENTIMENT_BATCH_SIZE
+    para_len = len(para_train_data) // PARAPHRASE_BATCH_SIZE
+    sts_len = len(sts_train_data) // STS_BATCH_SIZE
+
+    min_num_samples = min(sst_len, para_len, sts_len)
+    n_sst, n_para, n_sts = ratios([sst_len, para_len, sts_len])
+
+    if args.one_at_a_time:
+        n_sst, n_para, n_sts = 1, 1, 1
+        log("One at a time", args)
+    else:
+        log(f"SST: {n_sst}, Para: {n_para}, STS: {n_sts}", args)
 
     compute_parameters(model, args)
 
-    log(f"Number of samples: {num_samples}", args)
+    log(f"Samples each iteration... SST: {n_sst}, Para: {n_para}, STS: {n_sts}", args)
     if args.pcgrad:
         log("Using PCGrad", args)
         optimizer = PCGrad(optimizer)
@@ -543,53 +579,60 @@ def train_multitask(args):
         train_loss = 0
         num_batches = 0
 
+        sst_iter = iter(sst_train_dataloader)
+        para_iter = iter(para_train_dataloader)
+        sts_iter = iter(sts_train_dataloader)
+
         start = time.time()
 
-        for sst_batch, para_batch, sts_batch in tqdm(zip(sst_train_dataloader, para_train_dataloader, sts_train_dataloader), desc=f'train-{epoch}', disable=TQDM_DISABLE):
-            sentiment_loss = sentiment_batch(model, sst_batch)
-            # optimizer.zero_grad()
-            # sentiment_loss.backward()
-            # optimizer.step()
+        for _ in tqdm(range(min_num_samples), desc=f'train-{epoch}', disable=TQDM_DISABLE):
+            try:
+                sentiment_loss = execute_batch(model, sst_iter, sentiment_batch, n_sst)
+                paraphrase_loss = execute_batch(model, para_iter, paraphrase_batch, n_para)
+                semantic_loss = execute_batch(model, sts_iter, semantic_batch, n_sts)
 
-            paraphrase_loss = paraphrase_batch(model, para_batch)
-            # optimizer.zero_grad()
-            # paraphrase_loss.backward()
-            # optimizer.step()
+                losses = [sentiment_loss, paraphrase_loss, semantic_loss]
+                loss: torch.Tensor = sentiment_loss + paraphrase_loss + semantic_loss
 
-            semantic_loss = semantic_batch(model, sts_batch)
-            # optimizer.zero_grad()
-            # optimizer.step()
-            # semantic_loss.backward()
+                if type(loss) != torch.Tensor:
+                    print("Loss is not a tensor")
+                    print(loss)
+                    print(type(loss))
+                    print(losses)
+                    print(sentiment_loss)
+                    print(paraphrase_loss)
+                    print(semantic_loss)
+                    continue
 
-            losses = [sentiment_loss, paraphrase_loss, semantic_loss]
-            loss: torch.Tensor = sum(losses) # type: ignore
+                if args.l1l2:
+                    # Specify L1 and L2 weights
+                    l1_weight = 0.3
+                    l2_weight = 0.7
+                    # Compute L1 and L2 loss component
+                    parameters = []
+                    for parameter in model.parameters():
+                        parameters.append(parameter.view(-1))
+                    l1 = l1_weight * model.compute_l1_loss(torch.cat(parameters))
+                    l2 = l2_weight * model.compute_l2_loss(torch.cat(parameters))
+                    
+                    # Regularization: Add L1 and L2 loss components
+                    loss += l1
+                    loss += l2
 
-            if args.l1l2:
-                # Specify L1 and L2 weights
-                l1_weight = 0.3
-                l2_weight = 0.7
-                # Compute L1 and L2 loss component
-                parameters = []
-                for parameter in model.parameters():
-                    parameters.append(parameter.view(-1))
-                l1 = l1_weight * model.compute_l1_loss(torch.cat(parameters))
-                l2 = l2_weight * model.compute_l2_loss(torch.cat(parameters))
-                
-                # Regularization: Add L1 and L2 loss components
-                loss += l1
-                loss += l2
+                optimizer.zero_grad()
 
-            optimizer.zero_grad()
+                if isinstance(optimizer, PCGrad):
+                    optimizer.pc_backward(losses) # type: ignore
+                else:
+                    loss.backward()
 
-            if isinstance(optimizer, PCGrad):
-                optimizer.pc_backward(losses) # type: ignore
-            else:
-                loss.backward()
+                optimizer.step()
 
-            optimizer.step()
-
-            train_loss += loss.item()
-            num_batches += 1
+                train_loss += loss.item()
+                num_batches += 1
+            except StopIteration:
+                print("StopIteration!!")
+                break
 
         elapsed = time.time() - start
         epoch_times.append(elapsed)
@@ -623,7 +666,6 @@ def train_multitask(args):
     log("Total training time: " + str(time.time() - training_start) + " seconds.", args)
     log("Average epoch time: " + str(np.mean(epoch_times)) + " seconds.", args)
 
-
 def test_multitask(args):
     '''Test and save predictions on the dev and test sets of all three tasks.'''
     with torch.no_grad():
@@ -638,7 +680,7 @@ def test_multitask(args):
         if args.dora:
             replace_linear_with_dora(model, DEVICE)
         elif args.lora:
-            replace_linear_with_lora(model, DEVICE)
+            replace_linear_with_simple_lora(model, DEVICE)
         model.load_state_dict(saved['model'])
         print(f"Loaded model to test from {args.filepath}")
 
@@ -764,6 +806,7 @@ def get_args():
     parser.add_argument("--early_stop", type=int, help='After this many models have been discarded, we stop. Default is no stop.', default=-1)
     parser.add_argument("--nickname", type=str, help='Nickname for the model', default='')
     parser.add_argument("--output", type=str, help='Output directory for model and logs', default='.')
+    parser.add_argument("--one_at_a_time", action='store_true', help='Each training iteration, we will take one data point from each dataset, no matter their size.')
 
     args = parser.parse_args()
     return args
@@ -781,6 +824,7 @@ def common_logs(args):
 
 def run(args):
     assert not (args.dora and args.lora), "Cannot use both DoRA and LoRA at the same time LOL."
+    assert not (args.dora or args.lora) or args.fine_tune_mode == 'full-model', "DoRA and LoRA can only be used with full-model fine-tuning."
 
     for x in [args.sst_dev_out, args.sst_test_out, args.para_dev_out, args.para_test_out, args.sts_dev_out, args.sts_test_out]:
         os.makedirs(os.path.dirname(x), exist_ok=True)

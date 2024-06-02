@@ -76,6 +76,7 @@ class Params:
         self.early_stop = params.get("early_stop")
         self.nickname = params.get("nickname")
         self.output = params.get("output")
+        self.one_at_a_time = params.get("one_at_a_time")
 
 params = {
     "sst_train": f"{REMOTE_DATA_DIR}/ids-sst-train.csv",
@@ -99,10 +100,10 @@ params = {
     "batch_size": 8,
     "hidden_dropout_prob": 0.1,
     "last_dropout_prob": 0.5,
-    "lr": 2e-5,
+    "lr": 1e-5,
     "pcgrad": False,
     "dora": False,
-    "lora": False,
+    "lora": True,
     "l1l2": False,
     "eval": False,
     "parallel": False,
@@ -114,6 +115,7 @@ params = {
     "decay": 0.01,
     "nickname": "",
     "output": REMOTE_OUTPUT_DIR,
+    "one_at_a_time": True,
 }
 
 image = (
@@ -126,12 +128,13 @@ app = modal.App()
 @app.function(image=image,
               mounts=[modal.Mount.from_local_dir(LOCAL_DATA_DIR, remote_path=REMOTE_DATA_DIR)],
               gpu=GPU,
-              timeout=60*60*3, # 3 hours
+              timeout=60*60*5,
               volumes={VOLUME_PATH: volume},
               )
 def run_multitask():
     params_obj = Params(params)
-    params_obj.nickname = EXPERIMENT_NAME
+    nick = EXPERIMENT_NAME
+    params_obj.nickname = nick
     try:
         multitask_classifier.run(params_obj)
     except Exception as e:
@@ -139,6 +142,6 @@ def run_multitask():
         print("Saving volume...")
         volume.commit()
         raise
-    print("Finished running multitask_classifier. Writing to modal...")
+    print(f"Finished running multitask_classifier experiment {nick}. Writing to modal...")
     volume.commit()
 

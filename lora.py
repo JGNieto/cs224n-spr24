@@ -94,7 +94,7 @@ class Linear(nn.Linear, LoRALayer):
             return F.linear(x, T(self.weight), bias=self.bias)
 
 # this code i wrote myself
-def replace_linear_with_lora(model, DEVICE, r=4, lora_alpha=1, lora_dropout=0., fan_in_fan_out=False, merge_weights=True):
+def replace_linear_with_lora(model, DEVICE, r=4, lora_alpha=1, lora_dropout=0., fan_in_fan_out=False, merge_weights=False):
     for name, module in model.named_children():
         if isinstance(module, nn.Linear):
             # Get the input and output dimensions of the current nn.Linear layer
