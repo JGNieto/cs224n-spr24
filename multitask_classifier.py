@@ -39,10 +39,12 @@ from evaluation import model_eval_sst, model_eval_multitask, model_eval_test_mul
 
 from pcgrad import PCGrad
 from dora import replace_linear_with_dora, replace_linear_with_simple_lora
-from lora import replace_linear_with_lora
+# from lora import replace_linear_with_lora
 
 from datetime import datetime
 import time
+
+import smart
 
 import gc
 import os
@@ -67,7 +69,7 @@ SENTIMENT_BATCH_SIZE = 8
 PARAPHRASE_BATCH_SIZE = 8
 STS_BATCH_SIZE = 8
 
-MAX_PER_ITER = 100
+MAX_PER_ITER = 10
 
 DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
@@ -81,30 +83,19 @@ class MultitaskBERT(nn.Module):
     '''
     def __init__(self, config):
         super(MultitaskBERT, self).__init__()
-        self.bert = BertModel.from_pretrained('bert-base-uncased')
+        self.bert: BertModel = BertModel.from_pretrained('bert-base-uncased') # type: ignore
         # last-linear-layer mode does not require updating BERT paramters.
         self.set_fine_tune_mode(config.fine_tune_mode)
 
-        # You will want to add layers here to perform the downstream tasks.
-
         # Sentiment classification layers
-        # self.sentiment_fc1 = nn.Linear(config.hidden_size, config.hidden_size // 2)
-        # self.sentiment_fc2 = nn.Linear(config.hidden_size // 2, 5)
-        # self.sentiment_activation = nn.ReLU()
         self.sentiment_dropout = nn.Dropout(config.last_dropout_prob)
         self.sentiment_linear = nn.Linear(config.hidden_size, 5)
 
         # Paraphrase detection layers
-        # self.paraphrase_fc1 = nn.Linear(2 * config.hidden_size, config.hidden_size)
-        # self.paraphrase_fc2 = nn.Linear(config.hidden_size, 1)
-        # self.paraphrase_activation = nn.ReLU()
         self.paraphrase_linear = nn.Linear(config.hidden_size, 1)
         self.paraphrase_dropout = nn.Dropout(config.last_dropout_prob)
 
         # Semantic textual similarity layers
-        # self.similarity_fc1 = nn.Linear(2 * config.hidden_size, config.hidden_size)
-        # self.similarity_fc2 = nn.Linear(config.hidden_size, 1)
-        # self.similarity_activation = nn.ReLU()
         self.similarity_linear = nn.Linear(config.hidden_size, 1)
         self.similarity_dropout = nn.Dropout(config.last_dropout_prob)
 
@@ -135,16 +126,32 @@ class MultitaskBERT(nn.Module):
         '''
 
         embeddings = self.forward(input_ids, attention_mask)
-        # x = self.sentiment_dropout(embeddings)
-        # x = self.sentiment_fc1(x)
-        # x = self.sentiment_activation(x)
-        # x = self.sentiment_dropout(x)
-        # logits = self.sentiment_fc2(x)
-
         x = self.sentiment_dropout(embeddings)
         logits = self.sentiment_linear(x)
 
         return logits
+
+    def predict_sentiment_smart(self, input_ids, attention_mask):
+        embed = self.bert.embed(input_ids)
+
+        def eval(embed):
+            outputs = self.bert.forward_from_embed(embed, attention_mask)
+            pooler = outputs["pooler_output"]
+            x = self.sentiment_dropout(pooler)
+            logits = self.sentiment_linear(x)
+            return logits
+
+        smart_loss_fn = smart.SMARTLoss(
+                eval,
+                smart.kl_loss,
+                smart.sym_kl_loss,
+                )
+
+        state = eval(embed)
+        smart_loss = smart_loss_fn(embed, state)
+
+        return state, smart_loss
+
 
     def predict_paraphrase(self,
                            input_ids_1, attention_mask_1,
@@ -155,19 +162,33 @@ class MultitaskBERT(nn.Module):
         '''
 
         embeddings_1 = self.forward(input_ids_1, attention_mask_1)
-        # embeddings_2 = self.forward(input_ids_2, attention_mask_2)
-        # combined_embeddings = torch.cat((embeddings_1, embeddings_2), 1)
-        # x = self.paraphrase_dropout(combined_embeddings)
-        # x = self.paraphrase_fc1(x)
-        # x = self.paraphrase_activation(x)
-        # x = self.paraphrase_dropout(x)
-        # logit = self.paraphrase_fc2(x)
-
         x = self.paraphrase_dropout(embeddings_1)
         logit = self.paraphrase_linear(x)
 
         return logit
 
+    def predict_para_smart(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
+        embed = self.bert.embed(input_ids_1)
+
+        def eval(embed):
+            outputs = self.bert.forward_from_embed(embed, attention_mask_1)
+            pooler = outputs["pooler_output"]
+            x = self.paraphrase_dropout(pooler)
+            logit = self.paraphrase_linear(x)
+            return logit
+
+        mse_loss_fn = nn.MSELoss()
+
+        smart_loss_fn = smart.SMARTLoss(
+                eval,
+                mse_loss_fn,
+                mse_loss_fn,
+                )
+
+        state = eval(embed)
+        smart_loss = smart_loss_fn(embed, state)
+
+        return state, smart_loss
 
     def predict_similarity(self,
                            input_ids_1, attention_mask_1,
@@ -177,18 +198,33 @@ class MultitaskBERT(nn.Module):
         '''
 
         embeddings_1 = self.forward(input_ids_1, attention_mask_1)
-        # embeddings_2 = self.forward(input_ids_2, attention_mask_2)
-        # combined_embeddings = torch.cat((embeddings_1, embeddings_2), 1)
-        # x = self.similarity_dropout(combined_embeddings)
-        # x = self.similarity_fc1(x)
-        # x = self.similarity_activation(x)
-        # x = self.similarity_dropout(x)
-        # logit = self.similarity_fc2(x)
-
         x = self.similarity_dropout(embeddings_1)
         logit = self.similarity_linear(x)
 
         return logit
+
+    def predict_similarity_smart(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
+        embed = self.bert.embed(input_ids_1)
+
+        def eval(embed):
+            outputs = self.bert.forward_from_embed(embed, attention_mask_1)
+            pooler = outputs["pooler_output"]
+            x = self.similarity_dropout(pooler)
+            logit = self.similarity_linear(x)
+            return logit
+
+        mse_loss_fn = nn.MSELoss()
+
+        smart_loss_fn = smart.SMARTLoss(
+                eval,
+                mse_loss_fn,
+                mse_loss_fn,
+                )
+
+        state = eval(embed)
+        smart_loss = smart_loss_fn(embed, state)
+
+        return state, smart_loss
     
     def compute_l1_loss(self, w):
         return torch.abs(w).sum()
@@ -228,7 +264,7 @@ def compute_parameters(model, args):
     log(f"Trainable parameters: {trainable_params}", args)
 
 # Custom function
-def sentiment_batch(model: nn.Module, batch) -> torch.Tensor:
+def sentiment_batch(model: nn.Module, batch, smart_lambda) -> torch.Tensor:
     b_ids, b_mask, b_labels = (batch['token_ids'],
                                batch['attention_mask'], batch['labels'])
 
@@ -236,13 +272,19 @@ def sentiment_batch(model: nn.Module, batch) -> torch.Tensor:
     b_mask = b_mask.to(DEVICE)
     b_labels = b_labels.to(DEVICE)
 
-    logits = model.predict_sentiment(b_ids, b_mask)
-    loss = F.cross_entropy(logits, b_labels.view(-1))
+    if smart_lambda is not None:
+        logits, smart_loss = model.predict_sentiment_smart(b_ids, b_mask)
+        loss = F.cross_entropy(logits, b_labels.view(-1))
+        loss += smart_lambda * smart_loss
+        return loss
+    else:
+        logits = model.predict_sentiment(b_ids, b_mask)
+        loss = F.cross_entropy(logits, b_labels.view(-1))
 
-    return loss
+        return loss
 
 # Custom function
-def paraphrase_batch(model: nn.Module, batch) -> torch.Tensor:
+def paraphrase_batch(model: nn.Module, batch, smart_lambda) -> torch.Tensor:
     b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'],
                                                       batch['attention_mask_1'],
                                                       batch['token_ids_2'],
@@ -262,7 +304,7 @@ def paraphrase_batch(model: nn.Module, batch) -> torch.Tensor:
     return loss
 
 # Custom function
-def semantic_batch(model: nn.Module, batch) -> torch.Tensor:
+def semantic_batch(model: nn.Module, batch, smart_lambda) -> torch.Tensor:
     b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'],
                                                       batch['attention_mask_1'],
                                                       batch['token_ids_2'],
@@ -275,10 +317,9 @@ def semantic_batch(model: nn.Module, batch) -> torch.Tensor:
     b_mask_2 = b_mask_2.to(DEVICE)
     b_labels = b_labels.to(DEVICE)
 
-
     logit = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-    loss = F.mse_loss(logit.view(-1), b_labels.float())
-    # loss = F.smooth_l1_loss(logit.view(-1), b_labels.float())
+    # loss = F.mse_loss(logit.view(-1), b_labels.float())
+    loss = F.smooth_l1_loss(logit.view(-1), b_labels.float())
 
     return loss
 
@@ -381,8 +422,7 @@ def train_single_task(args):
     best_dev_acc = 0
     n_discarded = 0
 
-    log("Using AdamW", args)
-    
+    log("Not using PCGrad", args)
 
     log("Start training at time: " + str(datetime.now()), args)
 
@@ -406,7 +446,7 @@ def train_single_task(args):
         start = time.time()
 
         for batch in tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
-            loss = function(model, batch)
+            loss = function(model, batch, args.smart_lambda)
 
             optimizer.zero_grad()
 
@@ -454,11 +494,11 @@ def ratios(arr):
     min_val = min(arr)
     return (min(x // min_val, MAX_PER_ITER) for x in arr)
 
-def execute_batch(model: nn.Module, iter, function, n) -> torch.Tensor:
+def execute_batch(model: nn.Module, iter, function, n, args) -> torch.Tensor:
     loss: torch.Tensor | None = None
     for _ in range(n):
         batch = next(iter)
-        dloss = function(model, batch)
+        dloss = function(model, batch, args.smart_lambda)
         if loss is None:
             loss = dloss
         else:
@@ -559,7 +599,7 @@ def train_multitask(args):
         log("Using PCGrad", args)
         optimizer = PCGrad(optimizer)
     else:
-        log("Using AdamW", args)
+        log("Not using PCGrad", args)
 
     log("Start training at time: " + str(datetime.now()), args)
 
@@ -587,22 +627,22 @@ def train_multitask(args):
 
         for _ in tqdm(range(min_num_samples), desc=f'train-{epoch}', disable=TQDM_DISABLE):
             try:
-                sentiment_loss = execute_batch(model, sst_iter, sentiment_batch, n_sst)
-                paraphrase_loss = execute_batch(model, para_iter, paraphrase_batch, n_para)
-                semantic_loss = execute_batch(model, sts_iter, semantic_batch, n_sts)
+                sentiment_loss = execute_batch(model, sst_iter, sentiment_batch, n_sst, args)
+                paraphrase_loss = execute_batch(model, para_iter, paraphrase_batch, n_para, args)
+                semantic_loss = execute_batch(model, sts_iter, semantic_batch, n_sts, args)
 
                 losses = [sentiment_loss, paraphrase_loss, semantic_loss]
                 loss: torch.Tensor = sentiment_loss + paraphrase_loss + semantic_loss
 
                 if type(loss) != torch.Tensor:
-                    print("Loss is not a tensor")
+                    print("PANIC! Loss is not a tensor")
                     print(loss)
                     print(type(loss))
                     print(losses)
                     print(sentiment_loss)
                     print(paraphrase_loss)
                     print(semantic_loss)
-                    continue
+                    raise ValueError
 
                 if args.l1l2:
                     # Specify L1 and L2 weights
@@ -807,6 +847,7 @@ def get_args():
     parser.add_argument("--nickname", type=str, help='Nickname for the model', default='')
     parser.add_argument("--output", type=str, help='Output directory for model and logs', default='.')
     parser.add_argument("--one_at_a_time", action='store_true', help='Each training iteration, we will take one data point from each dataset, no matter their size.')
+    parser.add_argument("--smart_lambda", type=float, help='What lambda to use for SMART regularization. Do not use SMART if not set or None', default=None)
 
     args = parser.parse_args()
     return args
@@ -821,6 +862,7 @@ def common_logs(args):
     log(f"Last dropout: {args.last_dropout_prob}", args)
     log(f"L1L2: {args.l1l2}", args)
     log(f"Decay: {args.decay}", args)
+    log(f"SMART lambda: {args.smart_lambda}", args)
 
 def run(args):
     assert not (args.dora and args.lora), "Cannot use both DoRA and LoRA at the same time LOL."

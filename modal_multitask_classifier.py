@@ -77,6 +77,7 @@ class Params:
         self.nickname = params.get("nickname")
         self.output = params.get("output")
         self.one_at_a_time = params.get("one_at_a_time")
+        self.smart_lambda = params.get("smart_lambda")
 
 params = {
     "sst_train": f"{REMOTE_DATA_DIR}/ids-sst-train.csv",
@@ -89,7 +90,6 @@ params = {
     "sts_dev": f"{REMOTE_DATA_DIR}/sts-dev.csv",
     "sts_test": f"{REMOTE_DATA_DIR}/sts-test-student.csv",
     "seed": 11711,
-    "epochs": 10,
     "fine_tune_mode": "full-model",
     "sst_dev_out": f"{REMOTE_PREDICTIONS_DIR}/sst-dev-output.csv",
     "sst_test_out": f"{REMOTE_PREDICTIONS_DIR}/sst-test-output.csv",
@@ -99,11 +99,11 @@ params = {
     "sts_test_out": f"{REMOTE_PREDICTIONS_DIR}/sts-test-output.csv",
     "batch_size": 8,
     "hidden_dropout_prob": 0.1,
-    "last_dropout_prob": 0.5,
+    "last_dropout_prob": 0,
     "lr": 1e-5,
     "pcgrad": False,
     "dora": False,
-    "lora": True,
+    "lora": False,
     "l1l2": False,
     "eval": False,
     "parallel": False,
@@ -111,11 +111,13 @@ params = {
     # "load": f"{VOLUME_PATH}/xvfcqo/2024-05-28-18-14-xvfcqo-full-model-10-2e-05-adamw-swiper-regloss-multitask.pt",
     "task": "multi",
     "load": None,
-    "early_stop": 10,
+    "epochs": 10,
+    "early_stop": 4,
     "decay": 0.01,
     "nickname": "",
     "output": REMOTE_OUTPUT_DIR,
     "one_at_a_time": True,
+    "smart_lambda": 2.,
 }
 
 image = (

@@ -234,6 +234,17 @@ class BertModel(BertPreTrainedModel):
       hidden_states = layer_module(hidden_states, extended_attention_mask)
 
     return hidden_states
+  
+  def forward_from_embed(self, embeddings, attention_mask):
+    # Feed to a transformer (a stack of BertLayers).
+    sequence_output = self.encode(embeddings, attention_mask=attention_mask)
+
+    # Get cls token hidden state.
+    first_tk = sequence_output[:, 0]
+    first_tk = self.pooler_dense(first_tk)
+    first_tk = self.pooler_af(first_tk)
+
+    return {'last_hidden_state': sequence_output, 'pooler_output': first_tk}
 
   def forward(self, input_ids, attention_mask):
     """
@@ -243,12 +254,5 @@ class BertModel(BertPreTrainedModel):
     # Get the embedding for each input token.
     embedding_output = self.embed(input_ids=input_ids)
 
-    # Feed to a transformer (a stack of BertLayers).
-    sequence_output = self.encode(embedding_output, attention_mask=attention_mask)
+    return self.forward_from_embed(embedding_output, attention_mask)
 
-    # Get cls token hidden state.
-    first_tk = sequence_output[:, 0]
-    first_tk = self.pooler_dense(first_tk)
-    first_tk = self.pooler_af(first_tk)
-
-    return {'last_hidden_state': sequence_output, 'pooler_output': first_tk}
