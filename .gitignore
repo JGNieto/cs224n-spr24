@@ -1,3 +1,11 @@
+# CS224n CUSTOM
+**.pt
+.DS_Store
+dev_files.zip
+test_files.zip
+modal_results/
+ensembles/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -25,13 +33,6 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-
-# CS224n CUSTOM
-**.pt
-.DS_Store
-dev_files.zip
-test_files.zip
-modal_results/
 
 # PyInstaller
 #  Usually these files are written by a python script from a template

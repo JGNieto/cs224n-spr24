@@ -101,7 +101,7 @@ params = {
     "hidden_dropout_prob": 0.1,
     "last_dropout_prob": 0,
     "lr": 1e-5,
-    "pcgrad": False,
+    "pcgrad": True,
     "dora": False,
     "lora": False,
     "l1l2": False,
@@ -116,7 +116,7 @@ params = {
     "decay": 0.01,
     "nickname": "",
     "output": REMOTE_OUTPUT_DIR,
-    "one_at_a_time": True,
+    "one_at_a_time": False,
     "smart_lambda": 2.,
 }
 
