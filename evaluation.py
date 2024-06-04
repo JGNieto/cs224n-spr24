@@ -42,6 +42,8 @@ def model_eval_sst(dataloader, model, device):
 
     f1 = f1_score(y_true, y_pred, average='macro')
     acc = accuracy_score(y_true, y_pred)
+    
+    model.train()
 
     return acc, f1, y_pred, y_true, sents, sent_ids
 
@@ -137,6 +139,8 @@ def model_eval_multitask(sentiment_dataloader,
         if sts_corr is not None:
             print(f'Semantic Textual Similarity correlation: {sts_corr:.3f}')
 
+        model.train()
+
         return (sentiment_accuracy,sst_y_pred, sst_sent_ids,
                 paraphrase_accuracy, para_y_pred, para_sent_ids,
                 sts_corr, sts_y_pred, sts_sent_ids)
@@ -211,6 +215,8 @@ def model_eval_test_multitask(sentiment_dataloader,
 
             sts_y_pred.extend(y_hat)
             sts_sent_ids.extend(b_sent_ids)
+
+        model.train()
 
         return (sst_y_pred, sst_sent_ids,
                 para_y_pred, para_sent_ids,

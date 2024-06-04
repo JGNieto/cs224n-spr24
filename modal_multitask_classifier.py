@@ -78,6 +78,7 @@ class Params:
         self.output = params.get("output")
         self.one_at_a_time = params.get("one_at_a_time")
         self.smart_lambda = params.get("smart_lambda")
+        self.save_losses = params.get("save_losses")
 
 params = {
     "sst_train": f"{REMOTE_DATA_DIR}/ids-sst-train.csv",
@@ -118,6 +119,7 @@ params = {
     "output": REMOTE_OUTPUT_DIR,
     "one_at_a_time": False,
     "smart_lambda": 2.,
+    "save_losses": False,
 }
 
 image = (

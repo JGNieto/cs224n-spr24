@@ -297,11 +297,16 @@ def paraphrase_batch(model: nn.Module, batch, smart_lambda) -> torch.Tensor:
     b_mask_2 = b_mask_2.to(DEVICE)
     b_labels = b_labels.to(DEVICE)
 
-    logit = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
 
-    loss = F.binary_cross_entropy_with_logits(logit.view(-1), b_labels.float())
-
-    return loss
+    if smart_lambda is not None:
+        logit, smart_loss = model.predict_para_smart(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+        loss = F.binary_cross_entropy_with_logits(logit.view(-1), b_labels.float())
+        loss += smart_lambda * smart_loss
+        return loss
+    else:
+        logit = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+        loss = F.binary_cross_entropy_with_logits(logit.view(-1), b_labels.float())
+        return loss
 
 # Custom function
 def semantic_batch(model: nn.Module, batch, smart_lambda) -> torch.Tensor:
@@ -317,11 +322,18 @@ def semantic_batch(model: nn.Module, batch, smart_lambda) -> torch.Tensor:
     b_mask_2 = b_mask_2.to(DEVICE)
     b_labels = b_labels.to(DEVICE)
 
-    logit = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-    # loss = F.mse_loss(logit.view(-1), b_labels.float())
-    loss = F.smooth_l1_loss(logit.view(-1), b_labels.float())
+    # loss_fn = nn.MSELoss()
+    loss_fn = nn.SmoothL1Loss()
 
-    return loss
+    if smart_lambda is not None:
+        logit, smart_loss = model.predict_similarity_smart(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+        loss = loss_fn(logit.view(-1), b_labels.float())
+        loss += smart_lambda * smart_loss
+        return loss
+    else:
+        logit = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+        loss = loss_fn(logit.view(-1), b_labels.float())
+        return loss
 
 def overall_score(sst_acc, para_acc, sts_corr):
     scores = []
@@ -333,6 +345,67 @@ def overall_score(sst_acc, para_acc, sts_corr):
         scores.append((sts_corr + 1) / 2)
 
     return np.mean(scores)
+
+LOSS_EVERY_N_ITERS = 50
+def compute_dataset_loss(sst_dataloader, para_dataloader, sts_dataloader, model):
+    MAX_N = 50
+    sst_loss = None
+    para_loss = None
+    sts_loss = None
+
+    model.eval()
+
+    if sst_dataloader is not None:
+        n = 0
+        sst_loss = 0
+        for batch in sst_dataloader:
+            sst_loss += sentiment_batch(model, batch, None).item()
+
+            if n >= MAX_N:
+                break
+
+            n += 1
+
+    if para_dataloader is not None:
+        n = 0
+        para_loss = 0
+        for batch in para_dataloader:
+            para_loss += paraphrase_batch(model, batch, None).item()
+
+            if n >= MAX_N:
+                break
+
+            n += 1
+
+    if sts_dataloader is not None:
+        n = 0
+        sts_loss = 0
+        for batch in sts_dataloader:
+            sts_loss += semantic_batch(model, batch, None).item()
+
+            if n >= MAX_N:
+                break
+
+            n += 1
+
+    model.train()
+
+    return sst_loss, para_loss, sts_loss
+
+
+def global_loss(model, csv, epoch, iter, sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, sst_train_dataloader, para_train_dataloader, sts_train_dataloader):
+    model.eval()
+
+    sst_dev_loss, para_dev_loss, sts_dev_loss = compute_dataset_loss(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model)
+    sst_train_loss, para_train_loss, sts_train_loss = compute_dataset_loss(sst_train_dataloader, para_train_dataloader, sts_train_dataloader, model)
+
+    model.train()
+
+    with open(csv, "a+") as f:
+        f.write(f"{epoch},{iter},{sst_dev_loss},{para_dev_loss},{sts_dev_loss},{sst_train_loss},{para_train_loss},{sts_train_loss}\n")
+
+    return sst_dev_loss, para_dev_loss, sts_dev_loss, sst_train_loss, para_train_loss, sts_train_loss
+
 
 def train_single_task(args):
     train_data = None
@@ -430,6 +503,10 @@ def train_single_task(args):
     epoch_times = []
     training_start = time.time()
 
+    if args.save_losses:
+        with open(args.losses, "w") as f:
+            f.write("epoch,iter,sst_dev_loss,para_dev_loss,sts_dev_loss,sst_train_loss,para_train_loss,sts_train_loss\n")
+
     # Run for the specified number of epochs.
     for epoch in range(args.epochs):
         print()
@@ -445,6 +522,7 @@ def train_single_task(args):
 
         start = time.time()
 
+        iteration = 0
         for batch in tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
             loss = function(model, batch, args.smart_lambda)
 
@@ -456,6 +534,16 @@ def train_single_task(args):
 
             train_loss += loss.item()
             num_batches += 1
+
+            if iteration % LOSS_EVERY_N_ITERS == 0:
+                if args.task == 'sst':
+                    global_loss(model, args.losses, epoch, iteration, sst_dev_dataloader, None, None, train_dataloader, None, None)
+                elif args.task == 'para':
+                    global_loss(model, args.losses, epoch, iteration, None, para_dev_dataloader, None, None, train_dataloader, None)
+                elif args.task == 'sts':
+                    global_loss(model, args.losses, epoch, iteration, None, None, sts_dev_dataloader, None, None, train_dataloader)
+
+            iteration += 1
 
         elapsed = time.time() - start
         epoch_times.append(elapsed)
@@ -601,6 +689,10 @@ def train_multitask(args):
     else:
         log("Not using PCGrad", args)
 
+    if args.save_losses:
+        with open(args.losses, "w") as f:
+            f.write("epoch,iter,sst_dev_loss,para_dev_loss,sts_dev_loss,sst_train_loss,para_train_loss,sts_train_loss\n")
+
     log("Start training at time: " + str(datetime.now()), args)
 
     last_good_epoch = 0
@@ -625,7 +717,7 @@ def train_multitask(args):
 
         start = time.time()
 
-        for _ in tqdm(range(min_num_samples), desc=f'train-{epoch}', disable=TQDM_DISABLE):
+        for iteration in tqdm(range(min_num_samples), desc=f'train-{epoch}', disable=TQDM_DISABLE):
             try:
                 sentiment_loss = execute_batch(model, sst_iter, sentiment_batch, n_sst, args)
                 paraphrase_loss = execute_batch(model, para_iter, paraphrase_batch, n_para, args)
@@ -673,6 +765,9 @@ def train_multitask(args):
             except StopIteration:
                 print("StopIteration!!")
                 break
+
+            if iteration % LOSS_EVERY_N_ITERS == 0:
+                global_loss(model, args.losses, epoch, iteration, sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, sst_train_dataloader, para_train_dataloader, sts_train_dataloader)
 
         elapsed = time.time() - start
         epoch_times.append(elapsed)
@@ -848,6 +943,7 @@ def get_args():
     parser.add_argument("--output", type=str, help='Output directory for model and logs', default='.')
     parser.add_argument("--one_at_a_time", action='store_true', help='Each training iteration, we will take one data point from each dataset, no matter their size.')
     parser.add_argument("--smart_lambda", type=float, help='What lambda to use for SMART regularization. Do not use SMART if not set or None', default=None)
+    parser.add_argument("--save_losses", action='store_true', help='Store detailed losses in a file.')
 
     args = parser.parse_args()
     return args
@@ -896,11 +992,13 @@ def run(args):
         if args.task == 'multi':
             args.filepath = os.path.join(args.output, f'{path}-multitask.pt') # Save path.
             args.stats = os.path.join(args.output, "logs", f'{path}-multitask-stats.txt') # Stats path.
+            args.losses = os.path.join(args.output, "logs", f'{path}-multitask-losses.csv')
             common_logs(args)
             train_multitask(args)
         else:
             args.filepath = os.path.join(args.output, f'{path}-{args.task}.pt') # Save path.
             args.stats = os.path.join(args.output, "logs", f'{path}-{args.task}-stats.txt') # Stats path.
+            args.losses = os.path.join(args.output, "logs", f'{path}-{args.task}-losses.csv')
             common_logs(args)
             train_single_task(args)
 
