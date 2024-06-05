@@ -545,6 +545,9 @@ def train_single_task(args):
 
             iteration += 1
 
+            if iteration >= 8000:
+                break
+
         elapsed = time.time() - start
         epoch_times.append(elapsed)
         log(f"Epoch {epoch} took {elapsed:.2f} seconds", args)
