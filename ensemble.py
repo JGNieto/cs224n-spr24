@@ -4,6 +4,7 @@ import os
 from scipy.stats import mode
 import numpy as np
 import zipfile
+import argparse
 
 current_directory = os.path.dirname(os.path.abspath(__file__))
 
@@ -91,27 +92,35 @@ def run(csv_files, output, task):
 
 
 def main(models, dataset):
-    output_dir = os.path.join(ENSEMBLES_OUTPUT, "-".join(models))
+    output_dir = os.path.join(ENSEMBLES_OUTPUT, "-".join(models['all']))
     outputs = []
 
     for task in ["sst", "para", "sts"]:
-        csv_files = [os.path.join(MODAL_FILEPATH, model, "predictions", f"{task}-{dataset}-output.csv") for model in models]
+        csv_files = [os.path.join(MODAL_FILEPATH, model, "predictions", f"{task}-{dataset}-output.csv") for model in models[task]]
         output = os.path.join(output_dir, f"{task}-{dataset}-output.csv")
         outputs.append(output)
         run(csv_files, output, "regression" if task == "sts" else "classification")
 
     create_zip_from_csvs(outputs, output_dir, dataset, models)
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Ensemble predictions from multiple models")
+    parser.add_argument("models", nargs="+", help="List of models to ensemble")
+    parser.add_argument("--sst_models", nargs="+", help="List of SST models to ensemble")
+    parser.add_argument("--para_models", nargs="+", help="List of Para models to ensemble")
+    parser.add_argument("--sts_models", nargs="+", help="List of STS models to ensemble")
+    parser.add_argument("--dataset", default="dev", help="Dataset to ensemble (dev or test)")
+    return parser.parse_args()
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3 or (sys.argv[1] in ["test", "dev"] and len(sys.argv) < 4):
-        print("Usage: python ensemble.py [test|dev] <csv_file1> <csv_file2> ... <csv_fileN>")
-        sys.exit(1)
+    args = parse_args()
 
-    if sys.argv[1] in ["test", "dev"]:
-        main(sys.argv[2:], sys.argv[1])
-    else:
-        main(sys.argv[1:], "dev")
-        main(sys.argv[1:], "test")
+    models = {
+        "all": args.models + args.sst_models + args.para_models + args.sts_models,
+        "sst": args.sst_models + args.models,
+        "para": args.para_models + args.models,
+        "sts": args.sts_models + args.models
+    }
 
+    main(models, args.dataset)
 

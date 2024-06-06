@@ -4,6 +4,7 @@
 dev_files.zip
 test_files.zip
 modal_results/
+data_backup/
 ensembles/
 
 # Byte-compiled / optimized / DLL files

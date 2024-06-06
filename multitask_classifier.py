@@ -868,10 +868,21 @@ def train_multitask(args):
     log("Total training time: " + str(time.time() - training_start) + " seconds.", args)
     log("Average epoch time: " + str(np.mean(epoch_times)) + " seconds.", args)
 
+def find_first_pt(dir):
+    for file in os.listdir(dir):
+        if file.endswith(".pt"):
+            return file
+    
+    raise FileNotFoundError("No .pt file found in the directory " + dir)
+
 def test_multitask(args):
     '''Test and save predictions on the dev and test sets of all three tasks.'''
     with torch.no_grad():
-        saved = torch.load(args.filepath)
+        saved = None
+        if args.filepath.endswith(".pt"):
+            saved = torch.load(args.filepath)
+        else:
+            saved = torch.load(find_first_pt(args.filepath))
         config = saved['model_config']
 
         model = MultitaskBERT(config)
