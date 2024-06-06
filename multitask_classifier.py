@@ -41,6 +41,8 @@ from pcgrad import PCGrad
 from dora import replace_linear_with_dora, replace_linear_with_simple_lora
 # from lora import replace_linear_with_lora
 
+from javbelle_utils import to_device
+
 from datetime import datetime
 import time
 
@@ -73,6 +75,10 @@ MAX_PER_ITER = 10
 
 DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
+SST_LOSS_MULTIPLIER = 1
+PARA_LOSS_MULTIPLIER = 1
+STS_LOSS_MULTIPLIER = 1
+
 class MultitaskBERT(nn.Module):
     '''
     This module should use BERT for 3 tasks:
@@ -86,17 +92,20 @@ class MultitaskBERT(nn.Module):
         self.bert: BertModel = BertModel.from_pretrained('bert-base-uncased') # type: ignore
         # last-linear-layer mode does not require updating BERT paramters.
         self.set_fine_tune_mode(config.fine_tune_mode)
+        
+        self.smart_lambda = config.smart_lambda
+        self.regression_input_size = config.hidden_size if self.smart_lambda is not None else config.hidden_size * 3
 
         # Sentiment classification layers
         self.sentiment_dropout = nn.Dropout(config.last_dropout_prob)
         self.sentiment_linear = nn.Linear(config.hidden_size, 5)
 
         # Paraphrase detection layers
-        self.paraphrase_linear = nn.Linear(config.hidden_size, 1)
+        self.paraphrase_linear = nn.Linear(self.regression_input_size, 1)
         self.paraphrase_dropout = nn.Dropout(config.last_dropout_prob)
 
         # Semantic textual similarity layers
-        self.similarity_linear = nn.Linear(config.hidden_size, 1)
+        self.similarity_linear = nn.Linear(self.regression_input_size, 1)
         self.similarity_dropout = nn.Dropout(config.last_dropout_prob)
 
     def set_fine_tune_mode(self, mode):
@@ -161,17 +170,38 @@ class MultitaskBERT(nn.Module):
         during evaluation.
         '''
 
+        input_ids_1, input_ids_comb = input_ids_1
+        attention_mask_1, attention_mask_comb = attention_mask_1
+
+        if self.smart_lambda is not None:
+            embeddings_comb = self.forward(input_ids_comb, attention_mask_comb)
+            x = self.paraphrase_dropout(embeddings_comb)
+            logit = self.paraphrase_linear(x)
+            return logit
+
+        embeddings_comb = self.forward(input_ids_comb, attention_mask_comb)
         embeddings_1 = self.forward(input_ids_1, attention_mask_1)
-        x = self.paraphrase_dropout(embeddings_1)
+        embeddings_2 = self.forward(input_ids_2, attention_mask_2)
+
+        embeddings_concat = torch.cat([embeddings_1, embeddings_2, embeddings_comb], dim=1)
+
+        x = self.paraphrase_dropout(embeddings_concat)
         logit = self.paraphrase_linear(x)
 
         return logit
 
     def predict_para_smart(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
-        embed = self.bert.embed(input_ids_1)
+        input_ids_1, input_ids_comb = input_ids_1
+        attention_mask_1, attention_mask_comb = attention_mask_1
+
+        embeddings_comb = self.bert.embed(input_ids_comb)
+        # embeddings_1 = self.bert.embed(input_ids_1)
+        # embeddings_2 = self.bert.embed(input_ids_2)
+        #
+        # embeddings_concat = torch.cat([embeddings_1, embeddings_2, embeddings_comb], dim=1)
 
         def eval(embed):
-            outputs = self.bert.forward_from_embed(embed, attention_mask_1)
+            outputs = self.bert.forward_from_embed(embed, attention_mask_comb)
             pooler = outputs["pooler_output"]
             x = self.paraphrase_dropout(pooler)
             logit = self.paraphrase_linear(x)
@@ -185,8 +215,8 @@ class MultitaskBERT(nn.Module):
                 mse_loss_fn,
                 )
 
-        state = eval(embed)
-        smart_loss = smart_loss_fn(embed, state)
+        state = eval(embeddings_comb)
+        smart_loss = smart_loss_fn(embeddings_comb, state)
 
         return state, smart_loss
 
@@ -197,17 +227,39 @@ class MultitaskBERT(nn.Module):
         Note that your output should be unnormalized (a logit).
         '''
 
+        input_ids_1, input_ids_comb = input_ids_1
+        attention_mask_1, attention_mask_comb = attention_mask_1
+
+        if self.smart_lambda is not None:
+            embeddings_comb = self.forward(input_ids_comb, attention_mask_comb)
+            x = self.similarity_dropout(embeddings_comb)
+            logit = self.similarity_linear(x)
+            return logit
+
+        embeddings_comb = self.forward(input_ids_comb, attention_mask_comb)
         embeddings_1 = self.forward(input_ids_1, attention_mask_1)
-        x = self.similarity_dropout(embeddings_1)
+        embeddings_2 = self.forward(input_ids_2, attention_mask_2)
+
+        embeddings_concat = torch.cat([embeddings_1, embeddings_2, embeddings_comb], dim=1)
+
+        x = self.similarity_dropout(embeddings_concat)
         logit = self.similarity_linear(x)
+        logit = F.relu(logit)
 
         return logit
 
     def predict_similarity_smart(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
-        embed = self.bert.embed(input_ids_1)
+        input_ids_1, input_ids_comb = input_ids_1
+        attention_mask_1, attention_mask_comb = attention_mask_1
+
+        embeddings_comb = self.bert.embed(input_ids_comb)
+        # embeddings_1 = self.bert.embed(input_ids_1)
+        # embeddings_2 = self.bert.embed(input_ids_2)
+        #
+        # embeddings_concat = torch.cat([embeddings_1, embeddings_2, embeddings_comb], dim=1)
 
         def eval(embed):
-            outputs = self.bert.forward_from_embed(embed, attention_mask_1)
+            outputs = self.bert.forward_from_embed(embed, attention_mask_comb)
             pooler = outputs["pooler_output"]
             x = self.similarity_dropout(pooler)
             logit = self.similarity_linear(x)
@@ -221,8 +273,8 @@ class MultitaskBERT(nn.Module):
                 mse_loss_fn,
                 )
 
-        state = eval(embed)
-        smart_loss = smart_loss_fn(embed, state)
+        state = eval(embeddings_comb)
+        smart_loss = smart_loss_fn(embeddings_comb, state)
 
         return state, smart_loss
     
@@ -268,8 +320,8 @@ def sentiment_batch(model: nn.Module, batch, smart_lambda) -> torch.Tensor:
     b_ids, b_mask, b_labels = (batch['token_ids'],
                                batch['attention_mask'], batch['labels'])
 
-    b_ids = b_ids.to(DEVICE)
-    b_mask = b_mask.to(DEVICE)
+    b_ids = to_device(b_ids)
+    b_mask = to_device(b_mask)
     b_labels = b_labels.to(DEVICE)
 
     if smart_lambda is not None:
@@ -291,10 +343,10 @@ def paraphrase_batch(model: nn.Module, batch, smart_lambda) -> torch.Tensor:
                                                       batch['attention_mask_2'],
                                                       batch['labels'])
 
-    b_ids_1 = b_ids_1.to(DEVICE)
-    b_mask_1 = b_mask_1.to(DEVICE)
-    b_ids_2 = b_ids_2.to(DEVICE)
-    b_mask_2 = b_mask_2.to(DEVICE)
+    b_ids_1 = to_device(b_ids_1)
+    b_mask_1 = to_device(b_mask_1)
+    b_ids_2 = to_device(b_ids_2)
+    b_mask_2 = to_device(b_mask_2)
     b_labels = b_labels.to(DEVICE)
 
 
@@ -316,10 +368,10 @@ def semantic_batch(model: nn.Module, batch, smart_lambda) -> torch.Tensor:
                                                       batch['attention_mask_2'],
                                                       batch['labels'])
 
-    b_ids_1 = b_ids_1.to(DEVICE)
-    b_mask_1 = b_mask_1.to(DEVICE)
-    b_ids_2 = b_ids_2.to(DEVICE)
-    b_mask_2 = b_mask_2.to(DEVICE)
+    b_ids_1 = to_device(b_ids_1)
+    b_mask_1 = to_device(b_mask_1)
+    b_ids_2 = to_device(b_ids_2)
+    b_mask_2 = to_device(b_mask_2)
     b_labels = b_labels.to(DEVICE)
 
     # loss_fn = nn.MSELoss()
@@ -461,7 +513,8 @@ def train_single_task(args):
               'num_labels': num_labels,
               'hidden_size': BERT_HIDDEN_SIZE,
               'data_dir': '.',
-              'fine_tune_mode': args.fine_tune_mode}
+              'fine_tune_mode': args.fine_tune_mode,
+              'smart_lambda': args.smart_lambda}
 
     config = SimpleNamespace(**config)
 
@@ -636,7 +689,8 @@ def train_multitask(args):
               'num_labels': num_labels,
               'hidden_size': BERT_HIDDEN_SIZE,
               'data_dir': '.',
-              'fine_tune_mode': args.fine_tune_mode}
+              'fine_tune_mode': args.fine_tune_mode,
+              'smart_lambda': args.smart_lambda}
 
     config = SimpleNamespace(**config)
 
@@ -718,13 +772,19 @@ def train_multitask(args):
         para_iter = iter(para_train_dataloader)
         sts_iter = iter(sts_train_dataloader)
 
+        sst_loss_sum, para_loss_sum, sts_loss_sum = 0, 0, 0
+
         start = time.time()
 
         for iteration in tqdm(range(min_num_samples), desc=f'train-{epoch}', disable=TQDM_DISABLE):
             try:
-                sentiment_loss = execute_batch(model, sst_iter, sentiment_batch, n_sst, args)
-                paraphrase_loss = execute_batch(model, para_iter, paraphrase_batch, n_para, args)
-                semantic_loss = execute_batch(model, sts_iter, semantic_batch, n_sts, args)
+                sentiment_loss = execute_batch(model, sst_iter, sentiment_batch, n_sst, args) * SST_LOSS_MULTIPLIER
+                paraphrase_loss = execute_batch(model, para_iter, paraphrase_batch, n_para, args) * PARA_LOSS_MULTIPLIER
+                semantic_loss = execute_batch(model, sts_iter, semantic_batch, n_sts, args) * STS_LOSS_MULTIPLIER
+
+                sst_loss_sum += sentiment_loss.item()
+                para_loss_sum += paraphrase_loss.item()
+                sts_loss_sum += semantic_loss.item()
 
                 losses = [sentiment_loss, paraphrase_loss, semantic_loss]
                 loss: torch.Tensor = sentiment_loss + paraphrase_loss + semantic_loss
@@ -777,6 +837,10 @@ def train_multitask(args):
         log(f"Epoch {epoch} took {elapsed:.2f} seconds", args)
 
         train_loss = train_loss / num_batches
+
+        sst_loss_sum, para_loss_sum, sts_loss_sum = sst_loss_sum / num_batches, para_loss_sum / num_batches, sts_loss_sum / num_batches
+
+        log(f"Losses this batch... SST: {sst_loss_sum}, Para: {para_loss_sum}, STS: {sts_loss_sum}", args)
 
         # sst_train_acc, _, _, para_train_acc, _, _, sts_train_corr, *_  = model_eval_multitask(sst_train_dataloader, para_train_dataloader, sts_train_dataloader, model, DEVICE)
         sst_dev_acc, _, _, para_dev_acc, _, _, sts_dev_corr, *_ = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, DEVICE)

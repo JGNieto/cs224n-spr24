@@ -91,6 +91,7 @@ def parse_args():
     parser.add_argument('--plot', nargs='+', choices=['total', 'sts', 'sst', 'para', 'all'],
                         help='List of plots to generate (e.g. --plot total sts sst)')
     parser.add_argument('--smooth', action='store_true', help='Smooth the data')
+    parser.add_argument('--axis_limits', nargs=2, type=int, help='Set the limits of the x-axis in epochs (e.g. --axis_limits 0 10)')
     return parser.parse_args()
 
 if __name__ == '__main__':

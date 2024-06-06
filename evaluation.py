@@ -11,6 +11,7 @@ import torch
 from sklearn.metrics import f1_score, accuracy_score
 from tqdm import tqdm
 import numpy as np
+from javbelle_utils import to_device
 
 
 TQDM_DISABLE = False
@@ -66,8 +67,8 @@ def model_eval_multitask(sentiment_dataloader,
             for step, batch in enumerate(tqdm(sentiment_dataloader, desc=f'eval-sst', disable=TQDM_DISABLE)):
                 b_ids, b_mask, b_labels, b_sent_ids = batch['token_ids'], batch['attention_mask'], batch['labels'], batch['sent_ids']
 
-                b_ids = b_ids.to(device)
-                b_mask = b_mask.to(device)
+                b_ids = to_device(b_ids, device)
+                b_mask = to_device(b_mask, device)
 
                 logits = model.predict_sentiment(b_ids, b_mask)
                 y_hat = logits.argmax(dim=-1).flatten().cpu().numpy()
@@ -90,10 +91,10 @@ def model_eval_multitask(sentiment_dataloader,
                               batch['token_ids_2'], batch['attention_mask_2'],
                               batch['labels'], batch['sent_ids'])
 
-                b_ids1 = b_ids1.to(device)
-                b_mask1 = b_mask1.to(device)
-                b_ids2 = b_ids2.to(device)
-                b_mask2 = b_mask2.to(device)
+                b_ids1 = to_device(b_ids1, device)
+                b_mask1 = to_device(b_mask1, device)
+                b_ids2 = to_device(b_ids2, device)
+                b_mask2 = to_device(b_mask2, device)
 
                 logits = model.predict_paraphrase(b_ids1, b_mask1, b_ids2, b_mask2)
                 y_hat = logits.sigmoid().round().flatten().cpu().numpy()
@@ -117,10 +118,10 @@ def model_eval_multitask(sentiment_dataloader,
                               batch['token_ids_2'], batch['attention_mask_2'],
                               batch['labels'], batch['sent_ids'])
 
-                b_ids1 = b_ids1.to(device)
-                b_mask1 = b_mask1.to(device)
-                b_ids2 = b_ids2.to(device)
-                b_mask2 = b_mask2.to(device)
+                b_ids1 = to_device(b_ids1, device)
+                b_mask1 = to_device(b_mask1, device)
+                b_ids2 = to_device(b_ids2, device)
+                b_mask2 = to_device(b_mask2, device)
 
                 logits = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
                 y_hat = logits.flatten().cpu().numpy()
@@ -184,10 +185,11 @@ def model_eval_test_multitask(sentiment_dataloader,
                           batch['token_ids_2'], batch['attention_mask_2'],
                           batch['sent_ids'])
 
-            b_ids1 = b_ids1.to(device)
-            b_mask1 = b_mask1.to(device)
-            b_ids2 = b_ids2.to(device)
-            b_mask2 = b_mask2.to(device)
+
+            b_ids1 = to_device(b_ids1, device)
+            b_mask1 = to_device(b_mask1, device)
+            b_ids2 = to_device(b_ids2, device)
+            b_mask2 = to_device(b_mask2, device)
 
             logits = model.predict_paraphrase(b_ids1, b_mask1, b_ids2, b_mask2)
             y_hat = logits.sigmoid().round().flatten().cpu().numpy()
@@ -205,10 +207,11 @@ def model_eval_test_multitask(sentiment_dataloader,
                           batch['token_ids_2'], batch['attention_mask_2'],
                           batch['sent_ids'])
 
-            b_ids1 = b_ids1.to(device)
-            b_mask1 = b_mask1.to(device)
-            b_ids2 = b_ids2.to(device)
-            b_mask2 = b_mask2.to(device)
+            b_ids1 = to_device(b_ids1, device)
+            b_mask1 = to_device(b_mask1, device)
+            b_ids2 = to_device(b_ids2, device)
+            b_mask2 = to_device(b_mask2, device)
+
 
             logits = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
             y_hat = logits.flatten().cpu().numpy()

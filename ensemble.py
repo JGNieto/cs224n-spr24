@@ -74,6 +74,9 @@ def run(csv_files, output, task):
         # MODE version
         # combined_df['ensemble_prediction'] = mode([df['prediction'] for df in dfs], axis=0, keepdims=False).mode
 
+    if task == "regression":
+        combined_df['ensemble_prediction'] = combined_df['ensemble_prediction'].clip(0, 5)
+
     # print(combined_df)
     
     # Reset index to make 'id' a column again
