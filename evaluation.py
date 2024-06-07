@@ -173,11 +173,7 @@ def model_eval_test_multitask(sentiment_dataloader,
         # Evaluate paraphrase detection.
         para_y_pred = []
         para_sent_ids = []
-        para_n = 0
         for step, batch in enumerate(tqdm(paraphrase_dataloader, desc=f'eval', disable=TQDM_DISABLE)):
-            if para_n > 200:
-                break
-            para_n += 1
 
             (b_ids1, b_mask1,
              b_ids2, b_mask2,

@@ -871,7 +871,7 @@ def train_multitask(args):
 def find_first_pt(dir):
     for file in os.listdir(dir):
         if file.endswith(".pt"):
-            return file
+            return os.path.join(dir, file)
     
     raise FileNotFoundError("No .pt file found in the directory " + dir)
 
@@ -884,6 +884,10 @@ def test_multitask(args):
         else:
             saved = torch.load(find_first_pt(args.filepath))
         config = saved['model_config']
+
+        if not hasattr(config, 'smart_lambda'):
+            config.smart_lambda = True
+            config.smart_lambda = None
 
         model = MultitaskBERT(config)
         if args.parallel:

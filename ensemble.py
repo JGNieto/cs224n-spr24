@@ -88,7 +88,7 @@ def run(csv_files, output, task):
         os.remove(output)
     os.makedirs(os.path.dirname(output), exist_ok=True)
     combined_df.to_csv(output, index=False)
-    print("Ensemble predictions saved to ensemble_predictions.csv")
+    print("Ensemble predictions saved to ", output)
 
 
 def main(models, dataset):
@@ -101,14 +101,14 @@ def main(models, dataset):
         outputs.append(output)
         run(csv_files, output, "regression" if task == "sts" else "classification")
 
-    create_zip_from_csvs(outputs, output_dir, dataset, models)
+    create_zip_from_csvs(outputs, output_dir, dataset, models['all'])
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Ensemble predictions from multiple models")
     parser.add_argument("models", nargs="+", help="List of models to ensemble")
-    parser.add_argument("--sst_models", nargs="+", help="List of SST models to ensemble")
-    parser.add_argument("--para_models", nargs="+", help="List of Para models to ensemble")
-    parser.add_argument("--sts_models", nargs="+", help="List of STS models to ensemble")
+    parser.add_argument("--sst_models", nargs="+", help="List of SST models to ensemble", default=[])
+    parser.add_argument("--para_models", nargs="+", help="List of Para models to ensemble", default=[])
+    parser.add_argument("--sts_models", nargs="+", help="List of STS models to ensemble", default=[])
     parser.add_argument("--dataset", default="dev", help="Dataset to ensemble (dev or test)")
     return parser.parse_args()
 

@@ -106,10 +106,8 @@ params = {
     "dora": False,
     "lora": False,
     "l1l2": False,
-    "eval": False,
     "parallel": False,
     "task": "multi",
-    "load": None,
     "epochs": 10,
     "early_stop": 4,
     "decay": 0.01,
@@ -118,6 +116,8 @@ params = {
     "one_at_a_time": True,
     "smart_lambda": 10,
     "save_losses": True,
+    "eval": True,
+    "load": os.path.join(VOLUME_PATH, "vmlnmg"),
 }
 
 image = (
