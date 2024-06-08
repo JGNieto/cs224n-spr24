@@ -56,7 +56,7 @@ def run(args):
     data["iter_adj"] = data["epoch"] + (data["iter"] / max_iter)
 
     # Plotting
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(6, 6))
 
     # Plot dev and train losses
     for plot in args.plot:
@@ -67,7 +67,7 @@ def run(args):
         elif plot == 'sst':
             plot_data(plt, data, 'sst', 'purple', 'pink', args)
         elif plot == 'para':
-            plot_data(plt, data, 'para', 'black', 'gray', args)
+            plot_data(plt, data, 'para', 'brown', 'olive', args)
 
     # Labeling the axes
     plt.xlabel('Epoch')
@@ -82,8 +82,12 @@ def run(args):
     plt.title('Training and Development Loss Over Iterations')
     plt.legend()
 
+    plt.savefig(f"plots/{exp_name}.png")
+    plt.savefig(f"plots/{exp_name}.pdf")
+
     # Show the plot
-    plt.show()
+    if args.show:
+        plt.show()
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run an experiment")
@@ -92,6 +96,7 @@ def parse_args():
                         help='List of plots to generate (e.g. --plot total sts sst)')
     parser.add_argument('--smooth', action='store_true', help='Smooth the data')
     parser.add_argument('--axis_limits', nargs=2, type=int, help='Set the limits of the x-axis in epochs (e.g. --axis_limits 0 10)')
+    parser.add_argument('--show', '-s', action='store_true', help='Show the plot')
     return parser.parse_args()
 
 if __name__ == '__main__':

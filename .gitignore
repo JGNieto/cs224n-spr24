@@ -6,6 +6,9 @@ test_files.zip
 modal_results/
 data_backup/
 ensembles/
+plots/
+submission/
+submission.zip
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
