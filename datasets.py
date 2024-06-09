@@ -122,6 +122,7 @@ class SentencePairDataset(Dataset):
         encoding1 = self.tokenizer(sent1, return_tensors='pt', padding=True, truncation=True)
         encoding2 = self.tokenizer(sent2, return_tensors='pt', padding=True, truncation=True)
         comb_encoding1 = self.tokenizer(sent1, sent2, return_tensors='pt', padding=True, truncation=True)
+        comb_encoding2 = self.tokenizer(sent2, sent1, return_tensors='pt', padding=True, truncation=True)
 
         token_ids = torch.LongTensor(encoding1['input_ids'])
         attention_mask = torch.LongTensor(encoding1['attention_mask'])
@@ -131,17 +132,21 @@ class SentencePairDataset(Dataset):
         attention_mask2 = torch.LongTensor(encoding2['attention_mask'])
         token_type_ids2 = torch.LongTensor(encoding2['token_type_ids'])
 
-        comb_token_ids = torch.LongTensor(comb_encoding1['input_ids'])
-        comb_attention_mask = torch.LongTensor(comb_encoding1['attention_mask'])
-        comb_token_type_ids = torch.LongTensor(comb_encoding1['token_type_ids'])
+        comb_token_ids1 = torch.LongTensor(comb_encoding1['input_ids'])
+        comb_attention_mask1 = torch.LongTensor(comb_encoding1['attention_mask'])
+        comb_token_type_ids1 = torch.LongTensor(comb_encoding1['token_type_ids'])
+
+        comb_token_ids2 = torch.LongTensor(comb_encoding2['input_ids'])
+        comb_attention_mask2 = torch.LongTensor(comb_encoding2['attention_mask'])
+        comb_token_type_ids2 = torch.LongTensor(comb_encoding2['token_type_ids'])
 
         if self.isRegression:
             labels = torch.DoubleTensor(labels)
         else:
             labels = torch.LongTensor(labels)
 
-        return ((token_ids, comb_token_ids), (token_type_ids, comb_token_type_ids), (attention_mask, comb_attention_mask),
-                token_ids2, token_type_ids2, attention_mask2,
+        return ((token_ids, comb_token_ids1), (token_type_ids, comb_token_type_ids1), (attention_mask, comb_attention_mask1),
+                (token_ids2, comb_token_ids2), (token_type_ids2, comb_token_type_ids2), (attention_mask2, comb_attention_mask2),
                 labels,sent_ids)
 
     def collate_fn(self, all_data):
@@ -201,6 +206,7 @@ class SentencePairTestDataset(Dataset):
         encoding1 = self.tokenizer(sent1, return_tensors='pt', padding=True, truncation=True)
         encoding2 = self.tokenizer(sent2, return_tensors='pt', padding=True, truncation=True)
         comb_encoding1 = self.tokenizer(sent1, sent2, return_tensors='pt', padding=True, truncation=True)
+        comb_encoding2 = self.tokenizer(sent2, sent1, return_tensors='pt', padding=True, truncation=True)
 
         token_ids = torch.LongTensor(encoding1['input_ids'])
         attention_mask = torch.LongTensor(encoding1['attention_mask'])
@@ -210,12 +216,16 @@ class SentencePairTestDataset(Dataset):
         attention_mask2 = torch.LongTensor(encoding2['attention_mask'])
         token_type_ids2 = torch.LongTensor(encoding2['token_type_ids'])
 
-        comb_token_ids = torch.LongTensor(comb_encoding1['input_ids'])
-        comb_attention_mask = torch.LongTensor(comb_encoding1['attention_mask'])
-        comb_token_type_ids = torch.LongTensor(comb_encoding1['token_type_ids'])
+        comb_token_ids1 = torch.LongTensor(comb_encoding1['input_ids'])
+        comb_attention_mask1 = torch.LongTensor(comb_encoding1['attention_mask'])
+        comb_token_type_ids1 = torch.LongTensor(comb_encoding1['token_type_ids'])
 
-        return ((token_ids, comb_token_ids), (token_type_ids, comb_token_type_ids), (attention_mask, comb_attention_mask),
-                token_ids2, token_type_ids2, attention_mask2,
+        comb_token_ids2 = torch.LongTensor(comb_encoding2['input_ids'])
+        comb_attention_mask2 = torch.LongTensor(comb_encoding2['attention_mask'])
+        comb_token_type_ids2 = torch.LongTensor(comb_encoding2['token_type_ids'])
+
+        return ((token_ids, comb_token_ids1), (token_type_ids, comb_token_type_ids1), (attention_mask, comb_attention_mask1),
+                (token_ids2, comb_token_ids2), (token_type_ids2, comb_token_type_ids2), (attention_mask2, comb_attention_mask2),
                 sent_ids)
 
     def collate_fn(self, all_data):

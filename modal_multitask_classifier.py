@@ -99,7 +99,7 @@ params = {
     "sts_test_out": f"{REMOTE_PREDICTIONS_DIR}/sts-test-output.csv",
     "batch_size": 8,
     "fine_tune_mode": "full-model",
-    "hidden_dropout_prob": 0.3,
+    "hidden_dropout_prob": 0.1,
     "last_dropout_prob": 0.5,
     "lr": 1e-5,
     "pcgrad": False,
@@ -114,10 +114,10 @@ params = {
     "nickname": "",
     "output": REMOTE_OUTPUT_DIR,
     "one_at_a_time": True,
-    "smart_lambda": 10,
-    "save_losses": True,
-    "eval": True,
-    "load": os.path.join(VOLUME_PATH, "vmlnmg"),
+    "smart_lambda": None,
+    "save_losses": False,
+    "eval": False,
+    "load": None,
 }
 
 image = (

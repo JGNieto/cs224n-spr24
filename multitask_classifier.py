@@ -79,6 +79,8 @@ SST_LOSS_MULTIPLIER = 1
 PARA_LOSS_MULTIPLIER = 1
 STS_LOSS_MULTIPLIER = 1
 
+B = True
+
 class MultitaskBERT(nn.Module):
     '''
     This module should use BERT for 3 tasks:
@@ -94,7 +96,8 @@ class MultitaskBERT(nn.Module):
         self.set_fine_tune_mode(config.fine_tune_mode)
         
         self.smart_lambda = config.smart_lambda
-        self.regression_input_size = config.hidden_size if self.smart_lambda is not None else config.hidden_size * 3
+        # self.regression_input_size = config.hidden_size if self.smart_lambda is not None else config.hidden_size * 3
+        self.regression_input_size = config.hidden_size * (2 if B else 1)
 
         # Sentiment classification layers
         self.sentiment_dropout = nn.Dropout(config.last_dropout_prob)
@@ -173,20 +176,20 @@ class MultitaskBERT(nn.Module):
         input_ids_1, input_ids_comb = input_ids_1
         attention_mask_1, attention_mask_comb = attention_mask_1
 
-        if self.smart_lambda is not None:
-            embeddings_comb = self.forward(input_ids_comb, attention_mask_comb)
-            x = self.paraphrase_dropout(embeddings_comb)
-            logit = self.paraphrase_linear(x)
-            return logit
+        input_ids_2, input_ids_comb2 = input_ids_2
+        attention_mask_2, attention_mask_comb2 = attention_mask_2
 
         embeddings_comb = self.forward(input_ids_comb, attention_mask_comb)
-        embeddings_1 = self.forward(input_ids_1, attention_mask_1)
-        embeddings_2 = self.forward(input_ids_2, attention_mask_2)
+        embeddings_comb2 = self.forward(input_ids_comb2, attention_mask_comb2)
 
-        embeddings_concat = torch.cat([embeddings_1, embeddings_2, embeddings_comb], dim=1)
-
-        x = self.paraphrase_dropout(embeddings_concat)
+        if B:
+            embed = torch.cat([embeddings_comb, embeddings_comb2], dim=1)
+        else:
+            embed = embeddings_comb + embeddings_comb2
+        
+        x = self.paraphrase_dropout(embed)
         logit = self.paraphrase_linear(x)
+        logit = F.relu(logit)
 
         return logit
 
@@ -230,19 +233,18 @@ class MultitaskBERT(nn.Module):
         input_ids_1, input_ids_comb = input_ids_1
         attention_mask_1, attention_mask_comb = attention_mask_1
 
-        if self.smart_lambda is not None:
-            embeddings_comb = self.forward(input_ids_comb, attention_mask_comb)
-            x = self.similarity_dropout(embeddings_comb)
-            logit = self.similarity_linear(x)
-            return logit
+        input_ids_2, input_ids_comb2 = input_ids_2
+        attention_mask_2, attention_mask_comb2 = attention_mask_2
 
         embeddings_comb = self.forward(input_ids_comb, attention_mask_comb)
-        embeddings_1 = self.forward(input_ids_1, attention_mask_1)
-        embeddings_2 = self.forward(input_ids_2, attention_mask_2)
+        embeddings_comb2 = self.forward(input_ids_comb2, attention_mask_comb2)
 
-        embeddings_concat = torch.cat([embeddings_1, embeddings_2, embeddings_comb], dim=1)
-
-        x = self.similarity_dropout(embeddings_concat)
+        if B:
+            embed = torch.cat([embeddings_comb, embeddings_comb2], dim=1)
+        else:
+            embed = embeddings_comb + embeddings_comb2
+        
+        x = self.similarity_dropout(embed)
         logit = self.similarity_linear(x)
         logit = F.relu(logit)
 
@@ -588,7 +590,7 @@ def train_single_task(args):
             train_loss += loss.item()
             num_batches += 1
 
-            if iteration % LOSS_EVERY_N_ITERS == 0:
+            if args.save_losses and iteration % LOSS_EVERY_N_ITERS == 0:
                 if args.task == 'sst':
                     global_loss(model, args.losses, epoch, iteration, sst_dev_dataloader, None, None, train_dataloader, None, None)
                 elif args.task == 'para':
@@ -829,7 +831,7 @@ def train_multitask(args):
                 print("StopIteration!!")
                 break
 
-            if iteration % LOSS_EVERY_N_ITERS == 0:
+            if args.save_losses and iteration % LOSS_EVERY_N_ITERS == 0:
                 global_loss(model, args.losses, epoch, iteration, sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, sst_train_dataloader, para_train_dataloader, sts_train_dataloader)
 
         elapsed = time.time() - start
